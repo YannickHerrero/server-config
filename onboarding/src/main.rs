@@ -639,14 +639,20 @@ fn run_step(root: &Path, step: StepKind) -> io::Result<bool> {
     }
     println!("Running: {command}\n");
 
-    Command::new("/usr/bin/zsh")
-        .args(["-lic", command])
+    external_command(root, command)
+        .status()
+        .map(|status| status.success())
+}
+
+fn external_command(root: &Path, command: &str) -> Command {
+    let mut process = Command::new("/bin/zsh");
+    process
+        .args(["-lc", command])
         .current_dir(root)
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .status()
-        .map(|status| status.success())
+        .stderr(Stdio::inherit());
+    process
 }
 
 fn repository_root() -> Result<PathBuf, Box<dyn Error>> {
@@ -750,6 +756,19 @@ mod tests {
         assert!(screen.contains("Server onboarding"));
         assert!(screen.contains("GitHub CLI"));
         assert!(screen.contains("2/6 complete"));
+    }
+
+    #[test]
+    fn external_steps_use_a_non_interactive_login_shell() {
+        let command = external_command(Path::new("/tmp"), "true");
+        assert_eq!(command.get_program(), "/bin/zsh");
+        assert_eq!(
+            command
+                .get_args()
+                .map(|argument| argument.to_string_lossy())
+                .collect::<Vec<_>>(),
+            ["-lc", "true"]
+        );
     }
 
     #[test]
