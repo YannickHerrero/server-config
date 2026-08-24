@@ -36,6 +36,12 @@ The second application verifies the Tailscale address before it restricts incomi
 
 ```bash
 exec "$SHELL" -l
+herdr
+```
+
+Start Pi inside a Herdr pane:
+
+```bash
 pi
 ```
 
@@ -63,12 +69,12 @@ To inspect a remote host from a trusted control machine, create the ignored file
 - an 8 GiB swap file
 - weekly SSD TRIM
 - UTC system time
-- pinned Node.js and Pi versions
+- pinned Node.js, Pi, and Herdr versions
 - Tailscale installation with interactive authentication
 - UFW with public traffic denied and SSH allowed only through Tailscale
 - password-based OpenSSH for the managed user, with root login disabled
 - removal of the unused `bind9` server
-- read-only checks for the OS, RAID, storage, private access, network, KVM, Node.js, and Pi
+- read-only checks for the OS, RAID, storage, private access, network, KVM, Node.js, Pi, and Herdr
 
 The playbook does not remove packages that were installed manually.
 
@@ -79,7 +85,7 @@ The playbook does not remove packages that were installed manually.
 - Android SDK, emulator, Java, browsers, or Maestro
 - application runtimes other than the Node.js version required by Pi
 - Docker
-- shell, editor, terminal, or Git dotfiles
+- shell, editor, or Git dotfiles
 - application services, repositories, user data, torrents, or backups
 - Pi authentication, settings, sessions, extensions, skills, prompts, or themes
 

@@ -359,6 +359,31 @@
       tags:
         - pi
 
+    - name: Read the installed Herdr version
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_user_dir }}/.local/bin/herdr"
+          - --version
+      register: server_config_installed_herdr
+      changed_when: false
+      failed_when: false
+      check_mode: false
+      tags:
+        - herdr
+
+    - name: Install the pinned Herdr workspace manager
+      when: server_config_installed_herdr.stdout != 'herdr ' + server_config_herdr_version
+      ansible.builtin.get_url:
+        url: "{{ server_config_herdr_url }}"
+        dest: "{{ ansible_user_dir }}/.local/bin/herdr"
+        checksum: "sha256:{{ server_config_herdr_sha256 }}"
+        owner: "{{ ansible_user_id }}"
+        group: "{{ ansible_user_gid }}"
+        mode: "0755"
+        force: true
+      tags:
+        - herdr
+
     - name: Install the Tailscale archive key
       become: true
       ansible.builtin.get_url:

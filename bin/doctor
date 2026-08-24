@@ -4,6 +4,7 @@ set -Eeuo pipefail
 ROOT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 EXPECTED_NODE_VERSION=$(awk -F'"' '/^server_config_node_version:/ {print $2}' "$ROOT_DIR/group_vars/all.yml")
 EXPECTED_PI_VERSION=$(awk -F'"' '/^server_config_pi_version:/ {print $2}' "$ROOT_DIR/group_vars/all.yml")
+EXPECTED_HERDR_VERSION=$(awk -F'"' '/^server_config_herdr_version:/ {print $2}' "$ROOT_DIR/group_vars/all.yml")
 EXPECTED_SWAP_PATH=$(awk '/^server_config_swap_path:/ {print $2}' "$ROOT_DIR/group_vars/all.yml")
 failures=0
 
@@ -174,6 +175,19 @@ if [[ -x $pi_binary ]]; then
     fi
 else
     fail "Pi is not installed at $pi_binary"
+fi
+
+herdr_binary="$HOME/.local/bin/herdr"
+if [[ -x $herdr_binary ]]; then
+    installed_herdr_version=$($herdr_binary --version)
+    printf 'Herdr: %s\n' "$installed_herdr_version"
+    if [[ $installed_herdr_version == "herdr $EXPECTED_HERDR_VERSION" ]]; then
+        pass "Herdr matches the pinned version"
+    else
+        fail "Herdr does not match the pinned version $EXPECTED_HERDR_VERSION"
+    fi
+else
+    fail "Herdr is not installed at $herdr_binary"
 fi
 
 pi_auth_file="$HOME/.pi/agent/auth.json"
