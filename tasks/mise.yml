@@ -1,0 +1,290 @@
+---
+- name: Create mise directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    owner: "{{ ansible_user_id }}"
+    group: "{{ ansible_user_gid }}"
+    mode: "0755"
+    state: directory
+  loop:
+    - "{{ ansible_user_dir }}/.cache/npm"
+    - "{{ ansible_user_dir }}/.config/mise"
+    - "{{ ansible_user_dir }}/.local/bin"
+    - "{{ ansible_user_dir }}/.local/lib"
+  tags:
+    - mise
+    - runtimes
+
+- name: Create the private server-config state directory
+  ansible.builtin.file:
+    path: "{{ ansible_user_dir }}/.local/state/server-config/backups"
+    owner: "{{ ansible_user_id }}"
+    group: "{{ ansible_user_gid }}"
+    mode: "0700"
+    state: directory
+  tags:
+    - mise
+    - runtimes
+
+- name: Install the pinned mise binary
+  ansible.builtin.get_url:
+    url: "{{ server_config_mise_url }}"
+    dest: "{{ ansible_user_dir }}/.local/bin/mise"
+    checksum: "sha256:{{ server_config_mise_sha256 }}"
+    owner: "{{ ansible_user_id }}"
+    group: "{{ ansible_user_gid }}"
+    mode: "0755"
+    force: true
+  tags:
+    - mise
+    - runtimes
+
+- name: Inspect the existing mise configuration
+  ansible.builtin.stat:
+    path: "{{ ansible_user_dir }}/.config/mise/config.toml"
+    follow: false
+  register: server_config_mise_config
+  tags:
+    - mise
+    - runtimes
+
+- name: Back up an unmanaged mise configuration
+  when:
+    - server_config_mise_config.stat.exists
+    - not server_config_mise_config.stat.islnk
+  ansible.builtin.copy:
+    src: "{{ ansible_user_dir }}/.config/mise/config.toml"
+    dest: "{{ ansible_user_dir }}/.local/state/server-config/backups/mise-config.toml"
+    remote_src: true
+    force: false
+    owner: "{{ ansible_user_id }}"
+    group: "{{ ansible_user_gid }}"
+    mode: "0600"
+  tags:
+    - mise
+    - runtimes
+
+- name: Link the tracked mise configuration
+  ansible.builtin.file:
+    src: "{{ server_config_repo_dir }}/config/mise/config.toml"
+    dest: "{{ ansible_user_dir }}/.config/mise/config.toml"
+    owner: "{{ ansible_user_id }}"
+    group: "{{ ansible_user_gid }}"
+    state: link
+    force: true
+  tags:
+    - mise
+    - runtimes
+
+- name: Check for missing mise tools
+  ansible.builtin.command:
+    argv:
+      - "{{ ansible_user_dir }}/.local/bin/mise"
+      - install
+      - --dry-run-code
+  environment:
+    HOME: "{{ ansible_user_dir }}"
+    PATH: "{{ ansible_user_dir }}/.local/bin:/usr/bin:/bin"
+  register: server_config_mise_missing
+  changed_when: server_config_mise_missing.rc == 1
+  failed_when: server_config_mise_missing.rc not in [0, 1]
+  check_mode: false
+  tags:
+    - mise
+    - runtimes
+
+- name: Install pinned mise tools
+  when:
+    - server_config_mise_missing.rc == 1
+    - not ansible_check_mode
+  ansible.builtin.command:
+    argv:
+      - "{{ ansible_user_dir }}/.local/bin/mise"
+      - install
+      - --yes
+  environment:
+    HOME: "{{ ansible_user_dir }}"
+    PATH: "{{ ansible_user_dir }}/.local/bin:/usr/bin:/bin"
+  changed_when: true
+  tags:
+    - mise
+    - runtimes
+
+- name: Reshim mise tools
+  when: not ansible_check_mode
+  ansible.builtin.command:
+    argv:
+      - "{{ ansible_user_dir }}/.local/bin/mise"
+      - reshim
+  environment:
+    HOME: "{{ ansible_user_dir }}"
+    PATH: "{{ ansible_user_dir }}/.local/bin:/usr/bin:/bin"
+  changed_when: false
+  tags:
+    - mise
+    - runtimes
+
+- name: Verify all mise tools are installed
+  ansible.builtin.command:
+    argv:
+      - "{{ ansible_user_dir }}/.local/bin/mise"
+      - install
+      - --dry-run-code
+  environment:
+    HOME: "{{ ansible_user_dir }}"
+    PATH: "{{ ansible_user_dir }}/.local/bin:/usr/bin:/bin"
+  register: server_config_mise_verify
+  changed_when: false
+  failed_when: server_config_mise_verify.rc != 0
+  check_mode: false
+  tags:
+    - mise
+    - runtimes
+
+- name: Read installed Rust components
+  ansible.builtin.command:
+    argv:
+      - "{{ ansible_user_dir }}/.local/bin/mise"
+      - exec
+      - rust@1.95.0
+      - --
+      - rustup
+      - component
+      - list
+      - --installed
+  environment:
+    HOME: "{{ ansible_user_dir }}"
+    PATH: "{{ ansible_user_dir }}/.local/bin:/usr/bin:/bin"
+  register: server_config_rust_components
+  changed_when: false
+  check_mode: false
+  tags:
+    - mise
+    - rust
+
+- name: Install pinned Rust components
+  when:
+    - not ansible_check_mode
+    - >-
+      'clippy-' not in server_config_rust_components.stdout
+      or 'rust-analyzer-' not in server_config_rust_components.stdout
+      or 'rustfmt-' not in server_config_rust_components.stdout
+  ansible.builtin.command:
+    argv:
+      - "{{ ansible_user_dir }}/.local/bin/mise"
+      - exec
+      - rust@1.95.0
+      - --
+      - rustup
+      - component
+      - add
+      - clippy
+      - rust-analyzer
+      - rustfmt
+  environment:
+    HOME: "{{ ansible_user_dir }}"
+    PATH: "{{ ansible_user_dir }}/.local/bin:/usr/bin:/bin"
+  changed_when: true
+  tags:
+    - mise
+    - rust
+
+- name: Read the installed Pi version through mise Node
+  ansible.builtin.command:
+    argv:
+      - "{{ ansible_user_dir }}/.local/bin/mise"
+      - exec
+      - "node@{{ server_config_node_version }}"
+      - --
+      - "{{ ansible_user_dir }}/.local/bin/pi"
+      - --version
+  environment:
+    HOME: "{{ ansible_user_dir }}"
+    PATH: "{{ ansible_user_dir }}/.local/bin:/usr/bin:/bin"
+  register: server_config_installed_pi
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  tags:
+    - mise
+    - pi
+
+- name: Install the pinned Pi coding agent with mise Node
+  when:
+    - not ansible_check_mode
+    - server_config_installed_pi.stdout != server_config_pi_version
+  ansible.builtin.command:
+    argv:
+      - "{{ ansible_user_dir }}/.local/bin/mise"
+      - exec
+      - "node@{{ server_config_node_version }}"
+      - --
+      - npm
+      - install
+      - --global
+      - --prefix
+      - "{{ ansible_user_dir }}/.local"
+      - --ignore-scripts
+      - "@earendil-works/pi-coding-agent@{{ server_config_pi_version }}"
+  environment:
+    HOME: "{{ ansible_user_dir }}"
+    PATH: "{{ ansible_user_dir }}/.local/bin:/usr/bin:/bin"
+    npm_config_cache: "{{ ansible_user_dir }}/.cache/npm"
+  changed_when: true
+  tags:
+    - mise
+    - pi
+
+- name: Inspect legacy system Node links
+  become: true
+  ansible.builtin.stat:
+    path: "/usr/local/bin/{{ item }}"
+    follow: false
+  loop:
+    - corepack
+    - node
+    - npm
+    - npx
+  register: server_config_legacy_node_links
+  tags:
+    - mise
+    - node
+
+- name: Refuse to remove unmanaged system Node commands
+  when: item.stat.exists
+  ansible.builtin.assert:
+    that:
+      - item.stat.islnk
+      - item.stat.lnk_target is match('^' + server_config_legacy_node_install_dir | regex_escape)
+    fail_msg: >-
+      {{ item.item }} exists in /usr/local/bin but is not a server-config legacy Node link. Inspect it manually.
+  loop: "{{ server_config_legacy_node_links.results }}"
+  tags:
+    - mise
+    - node
+
+- name: Remove legacy system Node links
+  become: true
+  ansible.builtin.file:
+    path: "/usr/local/bin/{{ item }}"
+    state: absent
+  loop:
+    - corepack
+    - node
+    - npm
+    - npx
+  tags:
+    - mise
+    - node
+
+- name: Remove the legacy system Node installation
+  become: true
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ server_config_legacy_node_install_dir }}"
+    - "{{ server_config_legacy_node_archive_path }}"
+  tags:
+    - mise
+    - node

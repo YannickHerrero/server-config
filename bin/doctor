@@ -2,6 +2,7 @@
 set -Eeuo pipefail
 
 ROOT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+export PATH="$HOME/.local/share/mise/shims:$HOME/.local/bin:$PATH"
 EXPECTED_NODE_VERSION=$(awk -F'"' '/^server_config_node_version:/ {print $2}' "$ROOT_DIR/group_vars/all.yml")
 EXPECTED_PI_VERSION=$(awk -F'"' '/^server_config_pi_version:/ {print $2}' "$ROOT_DIR/group_vars/all.yml")
 EXPECTED_HERDR_VERSION=$(awk -F'"' '/^server_config_herdr_version:/ {print $2}' "$ROOT_DIR/group_vars/all.yml")
@@ -155,6 +156,26 @@ if sudo -n true 2>/dev/null; then
 else
     warn "run sudo -v before doctor to inspect the effective UFW rules"
 fi
+
+section "User toolchain"
+if command -v mise >/dev/null 2>&1; then
+    printf 'mise: %s\n' "$(mise --version)"
+    if mise install --dry-run-code >/dev/null 2>&1; then
+        pass "all pinned mise tools are installed"
+    else
+        fail "one or more pinned mise tools are missing"
+    fi
+else
+    fail "mise is not available"
+fi
+
+for command_name in rustc cargo gh vercel nvim; do
+    if command -v "$command_name" >/dev/null 2>&1; then
+        printf '%s: %s\n' "$command_name" "$($command_name --version 2>&1 | head -1)"
+    else
+        fail "$command_name is not available"
+    fi
+done
 
 section "Pi runtime"
 if command -v node >/dev/null 2>&1; then

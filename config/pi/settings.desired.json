@@ -2,5 +2,6 @@
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.6-sol",
   "defaultThinkingLevel": "xhigh",
-  "hideThinkingBlock": false
+  "hideThinkingBlock": false,
+  "npmCommand": ["mise", "exec", "node@24.16.0", "--", "npm"]
 }
