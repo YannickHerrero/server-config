@@ -25,7 +25,14 @@ cd ~/dev/server-config
 
 `install.sh` installs the validation and Ansible packages from Ubuntu, validates the checkout, asks sudo for authorization, and applies the local playbook.
 
-Open a new login shell when it finishes:
+On a new host, the first application installs Tailscale and stops before changing SSH or UFW. Authenticate the node, then apply again:
+
+```bash
+sudo tailscale up --hostname="$(hostname)" --operator="$(id -un)" --ssh=false
+./install.sh
+```
+
+The second application verifies the Tailscale address before it restricts incoming traffic. Open a new login shell when it finishes:
 
 ```bash
 exec "$SHELL" -l
@@ -57,14 +64,18 @@ To inspect a remote host from a trusted control machine, create the ignored file
 - weekly SSD TRIM
 - UTC system time
 - pinned Node.js and Pi versions
-- read-only checks for the OS, RAID, storage, network, KVM, Node.js, and Pi
+- Tailscale installation with interactive authentication
+- UFW with public traffic denied and SSH allowed only through Tailscale
+- password-based OpenSSH for the managed user, with root login disabled
+- removal of the unused `bind9` server
+- read-only checks for the OS, RAID, storage, private access, network, KVM, Node.js, and Pi
 
 The playbook does not remove packages that were installed manually.
 
 ## Not managed yet
 
 - Ubuntu release upgrades
-- Tailscale, SSH hardening, sudo policy, or firewall rules
+- tailnet policy, Tailscale authentication, key expiry, or sudo policy
 - Android SDK, emulator, Java, browsers, or Maestro
 - application runtimes other than the Node.js version required by Pi
 - Docker

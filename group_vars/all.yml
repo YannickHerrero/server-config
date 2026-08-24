@@ -11,6 +11,13 @@ server_config_node_download_url: https://nodejs.org/dist/v24.16.0/node-v24.16.0-
 server_config_node_sha256: d804845d34eddc21dc1092b519d643ef40b1f58ec5dec5c22b1f4bd8fabde6c9
 server_config_pi_version: "0.84.3"
 
+server_config_tailscale_key_url: https://pkgs.tailscale.com/stable/ubuntu/noble.noarmor.gpg
+server_config_tailscale_key_sha256: 3e03dacf222698c60b8e2f990b809ca1b3e104de127767864284e6c228f1fb39
+server_config_tailscale_repository: >-
+  deb [signed-by=/usr/share/keyrings/tailscale-archive-keyring.gpg]
+  https://pkgs.tailscale.com/stable/ubuntu noble main
+server_config_tailscale_port: 41641
+
 server_config_swap_enabled: true
 server_config_swap_path: /swap.img
 server_config_swap_size_mb: 8192
@@ -33,6 +40,7 @@ server_config_packages:
   - smartmontools
   - sudo
   - tmux
+  - ufw
   - unattended-upgrades
   - unzip
   - xz-utils

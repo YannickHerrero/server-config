@@ -358,3 +358,316 @@
       changed_when: true
       tags:
         - pi
+
+    - name: Install the Tailscale archive key
+      become: true
+      ansible.builtin.get_url:
+        url: "{{ server_config_tailscale_key_url }}"
+        dest: /usr/share/keyrings/tailscale-archive-keyring.gpg
+        checksum: "sha256:{{ server_config_tailscale_key_sha256 }}"
+        owner: root
+        group: root
+        mode: "0644"
+      tags:
+        - access
+        - tailscale
+
+    - name: Configure the Tailscale APT repository
+      become: true
+      ansible.builtin.template:
+        src: tailscale.list.j2
+        dest: /etc/apt/sources.list.d/tailscale.list
+        owner: root
+        group: root
+        mode: "0644"
+      tags:
+        - access
+        - tailscale
+
+    - name: Install Tailscale
+      become: true
+      ansible.builtin.apt:
+        name: tailscale
+        state: present
+        update_cache: true
+      tags:
+        - access
+        - tailscale
+
+    - name: Enable the Tailscale service
+      become: true
+      ansible.builtin.systemd_service:
+        name: tailscaled
+        enabled: true
+        state: started
+      tags:
+        - access
+        - tailscale
+
+    - name: Remove the unused DNS server
+      become: true
+      ansible.builtin.apt:
+        name: bind9
+        state: absent
+        purge: true
+      tags:
+        - access
+        - packages
+
+    - name: Read the Tailscale state
+      become: true
+      ansible.builtin.command:
+        argv:
+          - tailscale
+          - status
+          - --json
+      register: server_config_tailscale_status_raw
+      changed_when: false
+      failed_when: false
+      check_mode: false
+      tags:
+        - access
+        - tailscale
+
+    - name: Require an authenticated Tailscale node
+      ansible.builtin.assert:
+        that:
+          - server_config_tailscale_status_raw.rc == 0
+          - server_config_tailscale_status_raw.stdout | trim | length > 0
+        fail_msg: >-
+          Tailscale is installed but not authenticated. Run
+          sudo tailscale up --hostname="$(hostname)" --operator="$(id -un)" --ssh=false,
+          then apply server-config again. No firewall or SSH restriction was changed.
+      tags:
+        - access
+        - tailscale
+
+    - name: Parse the Tailscale state
+      ansible.builtin.set_fact:
+        server_config_tailscale_status: "{{ server_config_tailscale_status_raw.stdout | from_json }}"
+      tags:
+        - access
+        - tailscale
+
+    - name: Require a running Tailscale backend
+      ansible.builtin.assert:
+        that:
+          - server_config_tailscale_status.BackendState == "Running"
+          - server_config_tailscale_status.TailscaleIPs | select('match', '^100[.]') | list | length > 0
+        fail_msg: >-
+          Tailscale must be authenticated and running with an IPv4 address before server-config can restrict
+          SSH and UFW. Run sudo tailscale up --hostname="$(hostname)" --operator="$(id -un)" --ssh=false,
+          then apply server-config again.
+      tags:
+        - access
+        - tailscale
+
+    - name: Keep Tailscale SSH disabled
+      become: true
+      ansible.builtin.command:
+        argv:
+          - tailscale
+          - set
+          - --ssh=false
+      changed_when: false
+      tags:
+        - access
+        - tailscale
+
+    - name: Configure OpenSSH access
+      become: true
+      ansible.builtin.template:
+        src: 00-server-config-sshd.conf.j2
+        dest: /etc/ssh/sshd_config.d/00-server-config.conf
+        owner: root
+        group: root
+        mode: "0644"
+        validate: /usr/sbin/sshd -t -f %s
+      notify: Reload OpenSSH
+      tags:
+        - access
+        - ssh
+
+    - name: Read the effective OpenSSH configuration
+      become: true
+      ansible.builtin.command:
+        argv:
+          - /usr/sbin/sshd
+          - -T
+      register: server_config_sshd_effective
+      changed_when: false
+      check_mode: false
+      tags:
+        - access
+        - ssh
+
+    - name: Verify the effective OpenSSH configuration
+      ansible.builtin.assert:
+        that:
+          - "'passwordauthentication yes' in server_config_sshd_effective.stdout_lines"
+          - "'kbdinteractiveauthentication no' in server_config_sshd_effective.stdout_lines"
+          - "'permitemptypasswords no' in server_config_sshd_effective.stdout_lines"
+          - "'permitrootlogin no' in server_config_sshd_effective.stdout_lines"
+          - "'allowusers ' + ansible_user_id in server_config_sshd_effective.stdout_lines"
+        fail_msg: The effective OpenSSH settings do not match the managed access policy.
+      tags:
+        - access
+        - ssh
+
+    - name: Reload OpenSSH before configuring the firewall
+      ansible.builtin.meta: flush_handlers
+      tags:
+        - access
+        - ssh
+
+    - name: Configure UFW default policies
+      become: true
+      ansible.builtin.lineinfile:
+        path: /etc/default/ufw
+        regexp: "^{{ item.key }}="
+        line: "{{ item.key }}=\"{{ item.value }}\""
+        owner: root
+        group: root
+        mode: "0644"
+      loop:
+        - key: DEFAULT_INPUT_POLICY
+          value: DROP
+        - key: DEFAULT_OUTPUT_POLICY
+          value: ACCEPT
+        - key: DEFAULT_FORWARD_POLICY
+          value: DROP
+      notify: Reload UFW
+      tags:
+        - access
+        - firewall
+
+    - name: Allow OpenSSH only through Tailscale
+      become: true
+      ansible.builtin.command:
+        argv:
+          - ufw
+          - allow
+          - in
+          - "on"
+          - tailscale0
+          - to
+          - any
+          - port
+          - "22"
+          - proto
+          - tcp
+          - comment
+          - SSH over Tailscale
+      register: server_config_ufw_ssh_rule
+      changed_when: "'Rules updated' in server_config_ufw_ssh_rule.stdout"
+      tags:
+        - access
+        - firewall
+
+    - name: Allow direct Tailscale transport
+      become: true
+      ansible.builtin.command:
+        argv:
+          - ufw
+          - allow
+          - in
+          - "on"
+          - "{{ ansible_default_ipv4.interface }}"
+          - to
+          - any
+          - port
+          - "{{ server_config_tailscale_port | string }}"
+          - proto
+          - udp
+          - comment
+          - Tailscale direct
+      register: server_config_ufw_tailscale_rule
+      changed_when: "'Rules updated' in server_config_ufw_tailscale_rule.stdout"
+      tags:
+        - access
+        - firewall
+
+    - name: Read the UFW state
+      become: true
+      ansible.builtin.command:
+        argv:
+          - ufw
+          - status
+      register: server_config_ufw_status
+      changed_when: false
+      check_mode: false
+      tags:
+        - access
+        - firewall
+
+    - name: Enable UFW
+      become: true
+      when: "'Status: inactive' in server_config_ufw_status.stdout"
+      ansible.builtin.command:
+        argv:
+          - ufw
+          - --force
+          - enable
+      changed_when: true
+      tags:
+        - access
+        - firewall
+
+    - name: Enable the UFW service
+      become: true
+      ansible.builtin.systemd_service:
+        name: ufw
+        enabled: true
+        state: started
+      tags:
+        - access
+        - firewall
+
+    - name: Apply pending firewall changes
+      ansible.builtin.meta: flush_handlers
+      tags:
+        - access
+        - firewall
+
+    - name: Read the final UFW state
+      become: true
+      ansible.builtin.command:
+        argv:
+          - ufw
+          - status
+          - verbose
+      register: server_config_ufw_final
+      changed_when: false
+      check_mode: false
+      tags:
+        - access
+        - firewall
+
+    - name: Verify the final UFW state
+      ansible.builtin.assert:
+        that:
+          - "'Status: active' in server_config_ufw_final.stdout_lines"
+          - "'Default: deny (incoming), allow (outgoing)' in server_config_ufw_final.stdout"
+          - "'22/tcp on tailscale0' in server_config_ufw_final.stdout"
+          - >-
+            (server_config_tailscale_port | string) + '/udp on '
+            + ansible_default_ipv4.interface in server_config_ufw_final.stdout
+        fail_msg: UFW does not match the managed private-access policy.
+      tags:
+        - access
+        - firewall
+
+  handlers:
+    - name: Reload OpenSSH
+      become: true
+      ansible.builtin.systemd_service:
+        name: ssh
+        state: reloaded
+
+    - name: Reload UFW
+      become: true
+      ansible.builtin.command:
+        argv:
+          - ufw
+          - reload
+      changed_when: true

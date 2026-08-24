@@ -105,6 +105,51 @@ else
     pass "no reboot is currently required"
 fi
 
+section "Private access"
+for unit in tailscaled ufw ssh; do
+    if systemctl is-enabled --quiet "$unit" && systemctl is-active --quiet "$unit"; then
+        pass "$unit is enabled and active"
+    else
+        fail "$unit is not enabled and active"
+    fi
+done
+if tailscale_ip=$(tailscale ip -4 2>/dev/null | head -1) && [[ $tailscale_ip == 100.* ]]; then
+    printf 'Tailscale IPv4: %s\n' "$tailscale_ip"
+    pass "Tailscale is connected"
+else
+    fail "Tailscale has no IPv4 address"
+fi
+if tailscale debug prefs 2>/dev/null | jq -e '.RunSSH == false' >/dev/null; then
+    pass "Tailscale SSH is disabled"
+else
+    fail "Tailscale SSH is enabled or its state is unavailable"
+fi
+if dpkg-query -W -f='${db:Status-Status}' bind9 2>/dev/null | grep -qx installed; then
+    fail "the unused bind9 server is installed"
+else
+    pass "bind9 is absent"
+fi
+if pgrep -x named >/dev/null; then
+    fail "named is running"
+else
+    pass "named is not running"
+fi
+if sudo -n true 2>/dev/null; then
+    ufw_status=$(sudo -n ufw status verbose)
+    if grep -q '^Status: active$' <<<"$ufw_status"; then
+        pass "UFW is active"
+    else
+        fail "UFW is inactive"
+    fi
+    if grep -q '22/tcp on tailscale0' <<<"$ufw_status"; then
+        pass "SSH is allowed on tailscale0"
+    else
+        fail "SSH is not allowed on tailscale0"
+    fi
+else
+    warn "run sudo -v before doctor to inspect the effective UFW rules"
+fi
+
 section "Pi runtime"
 if command -v node >/dev/null 2>&1; then
     installed_node_version=$(node --version)

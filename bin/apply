@@ -7,3 +7,4 @@ cd "$ROOT_DIR"
 "$ROOT_DIR/bin/validate"
 sudo -v
 ansible-playbook "$@" "$ROOT_DIR/playbook.yml"
+"$ROOT_DIR/bin/doctor"

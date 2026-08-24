@@ -1,0 +1,10 @@
+# Managed by server-config. Local edits will be overwritten.
+PubkeyAuthentication yes
+PasswordAuthentication yes
+KbdInteractiveAuthentication no
+PermitEmptyPasswords no
+PermitRootLogin no
+X11Forwarding no
+MaxAuthTries 3
+LoginGraceTime 30
+AllowUsers {{ ansible_user_id }}
