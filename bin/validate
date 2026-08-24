@@ -14,11 +14,28 @@ if (( ${#missing[@]} > 0 )); then
     exit 1
 fi
 
-shellcheck install.sh bin/apply bin/check bin/doctor bin/validate
+shellcheck install.sh bin/apply bin/check bin/converge bin/doctor bin/validate
 zsh -n config/zsh/zshenv config/zsh/.zshrc config/zsh/*.zsh
 python3 -m json.tool config/pi/settings.desired.json >/dev/null
 python3 -m json.tool config/nvim/lazy-lock.json >/dev/null
 python3 -c 'import tomllib; tomllib.load(open("config/herdr/config.toml", "rb")); tomllib.load(open("config/mise/config.toml", "rb")); tomllib.load(open("config/nvim/stylua.toml", "rb")); tomllib.load(open("config/ohmyposh/zen.toml", "rb"))'
+python3 - <<'PY'
+import os
+from pathlib import Path
+import subprocess
+
+identity = Path("config/git/identity.local")
+if identity.exists():
+    assert identity.is_file(), "config/git/identity.local must be a regular file"
+    assert identity.stat().st_mode & 0o777 == 0o600, "config/git/identity.local must use mode 0600"
+    keys = subprocess.run(
+        ["git", "config", "--file", str(identity), "--name-only", "--list"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.splitlines()
+    assert sorted(keys) == ["user.email", "user.name"], "local Git identity has unexpected keys"
+PY
 yamllint .ansible-lint .yamllint group_vars/all.yml inventory/localhost.yml playbook.yml
 ansible-playbook --syntax-check playbook.yml
 ansible-lint playbook.yml

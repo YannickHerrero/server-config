@@ -206,6 +206,14 @@ for command_name in rustc cargo gh vercel nvim; do
     fi
 done
 
+section "Developer identity"
+if git config --global --get user.name >/dev/null 2>&1 \
+    && git config --global --get user.email >/dev/null 2>&1; then
+    pass "Git name and email are configured"
+else
+    warn "Git identity is missing; run ./bin/onboard"
+fi
+
 section "Pi runtime"
 if command -v node >/dev/null 2>&1; then
     installed_node_version=$(node --version)

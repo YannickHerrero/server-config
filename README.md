@@ -68,6 +68,8 @@ No tracked configuration forces a dark or light palette. Herdr uses the terminal
 
 `converge` asks for sudo once, shows the dry-run diff, waits for explicit approval, applies twice, and fails unless the second application reports `changed=0 failed=0`. Its latest logs are stored with private permissions in `~/.local/state/server-config/logs`.
 
+Git identity is optional local metadata. Keep it in the ignored file `config/git/identity.local`, using `config/git/identity.example` as its format. The playbook links it into the effective global Git configuration while preserving authentication managed by `gh`. Restrict the local file to mode `0600`.
+
 To inspect a remote host from a trusted control machine, create the ignored file `inventory/remote.local.yml` and pass it explicitly:
 
 ```bash
@@ -86,6 +88,7 @@ To inspect a remote host from a trusted control machine, create the ignored file
 - UFW with public traffic denied and SSH allowed only through Tailscale
 - password-based OpenSSH for the managed user, with root login disabled
 - portable Zsh configuration with pinned plugins and a transparent prompt
+- optional local Git identity without publishing personal metadata
 - tracked global `AGENTS.md` and stable Pi settings merged without touching authentication
 - tracked Herdr configuration with `Ctrl+A`, `|` vertical split, and `-` horizontal split
 - tracked Neovim configuration and plugin lockfile without tmux integration or a forced color theme
@@ -100,7 +103,6 @@ The playbook does not remove packages that were installed manually.
 - tailnet policy, Tailscale authentication, key expiry, or sudo policy
 - Android SDK, emulator, Java, browsers, or Maestro
 - Docker
-- Git identity
 - application services, repositories, user data, torrents, or backups
 - Pi authentication, mutable state, sessions, extensions, skills, prompts, packages, or themes
 - gh and Vercel authentication
@@ -113,4 +115,4 @@ Downloaded bootstrap tools use versions and checksums declared in `group_vars/al
 
 ## Secrets
 
-Keep secrets outside Git. The ignore rules cover local inventories, `.env` files, `auth.json`, and a local `secrets/` directory, but ignore rules are not a substitute for reviewing every staged file before a commit.
+Keep secrets outside Git. The ignore rules cover local inventories, Git identity, `.env` files, `auth.json`, and a local `secrets/` directory, but ignore rules are not a substitute for reviewing every staged file before a commit.

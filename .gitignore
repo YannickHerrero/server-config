@@ -2,8 +2,9 @@
 .ansible/
 *.retry
 
-# Local inventories and credentials
+# Local inventories, identity, and credentials
 inventory/*.local.yml
+config/git/identity.local
 .env
 .env.*
 secrets/

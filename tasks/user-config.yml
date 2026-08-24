@@ -16,6 +16,7 @@
     mode: "0700"
     state: directory
   loop:
+    - "{{ ansible_user_dir }}/.config/git"
     - "{{ ansible_user_dir }}/.config/herdr"
     - "{{ ansible_user_dir }}/.local/state/server-config/backups"
     - "{{ ansible_user_dir }}/.pi/agent"
@@ -66,6 +67,153 @@
       dest: "{{ ansible_user_dir }}/.pi/agent/AGENTS.md"
   tags:
     - user-config
+
+- name: Inspect the optional local Git identity
+  ansible.builtin.stat:
+    path: "{{ server_config_repo_dir }}/config/git/identity.local"
+    follow: false
+  register: server_config_git_identity_source
+  tags:
+    - user-config
+    - git
+
+- name: Validate the local Git identity file
+  when: server_config_git_identity_source.stat.exists
+  tags:
+    - user-config
+    - git
+  block:
+    - name: Require a regular local Git identity file
+      ansible.builtin.assert:
+        that:
+          - server_config_git_identity_source.stat.isreg
+        fail_msg: config/git/identity.local must be a regular file
+        quiet: true
+
+    - name: Restrict local Git identity permissions
+      ansible.builtin.file:
+        path: "{{ server_config_repo_dir }}/config/git/identity.local"
+        owner: "{{ ansible_user_id }}"
+        group: "{{ ansible_user_gid }}"
+        mode: "0600"
+        state: file
+
+    - name: Read local Git identity keys
+      ansible.builtin.command:
+        argv:
+          - git
+          - config
+          - --file
+          - "{{ server_config_repo_dir }}/config/git/identity.local"
+          - --name-only
+          - --list
+      register: server_config_git_identity_keys
+      changed_when: false
+      check_mode: false
+      no_log: true
+
+    - name: Require only Git name and email identity keys
+      ansible.builtin.assert:
+        that:
+          - server_config_git_identity_keys.stdout_lines | sort == ['user.email', 'user.name']
+        fail_msg: config/git/identity.local must contain only user.name and user.email
+        quiet: true
+      no_log: true
+
+- name: Inspect the managed Git identity link
+  when: server_config_git_identity_source.stat.exists
+  ansible.builtin.stat:
+    path: "{{ ansible_user_dir }}/.config/git/identity"
+    follow: false
+  register: server_config_git_identity_target
+  tags:
+    - user-config
+    - git
+
+- name: Refuse an unexpected Git identity symlink
+  when:
+    - server_config_git_identity_source.stat.exists
+    - server_config_git_identity_target.stat.exists
+    - server_config_git_identity_target.stat.islnk
+  ansible.builtin.assert:
+    that:
+      - >-
+        server_config_git_identity_target.stat.lnk_target
+        == server_config_repo_dir + '/config/git/identity.local'
+    fail_msg: ~/.config/git/identity points outside server-config
+    quiet: true
+  tags:
+    - user-config
+    - git
+
+- name: Back up an unmanaged Git identity file
+  when:
+    - server_config_git_identity_source.stat.exists
+    - server_config_git_identity_target.stat.exists
+    - not server_config_git_identity_target.stat.islnk
+  ansible.builtin.copy:
+    src: "{{ ansible_user_dir }}/.config/git/identity"
+    dest: "{{ ansible_user_dir }}/.local/state/server-config/backups/git-identity"
+    remote_src: true
+    force: false
+    owner: "{{ ansible_user_id }}"
+    group: "{{ ansible_user_gid }}"
+    mode: "0600"
+  tags:
+    - user-config
+    - git
+
+- name: Link the local Git identity
+  when: server_config_git_identity_source.stat.exists
+  ansible.builtin.file:
+    src: "{{ server_config_repo_dir }}/config/git/identity.local"
+    dest: "{{ ansible_user_dir }}/.config/git/identity"
+    owner: "{{ ansible_user_id }}"
+    group: "{{ ansible_user_gid }}"
+    state: link
+    force: true
+  tags:
+    - user-config
+    - git
+
+- name: Include the local identity from the global Git configuration
+  when: server_config_git_identity_source.stat.exists
+  ansible.builtin.blockinfile:
+    path: "{{ ansible_user_dir }}/.gitconfig"
+    block: |-
+      [include]
+          path = ~/.config/git/identity
+    marker: "# {mark} server-config Git identity"
+    create: true
+    owner: "{{ ansible_user_id }}"
+    group: "{{ ansible_user_gid }}"
+    mode: "0600"
+  tags:
+    - user-config
+    - git
+
+- name: Verify the effective Git identity
+  when:
+    - server_config_git_identity_source.stat.exists
+    - not ansible_check_mode
+  ansible.builtin.command:
+    argv:
+      - git
+      - config
+      - --global
+      - --get-regexp
+      - '^user\.(name|email)$'
+  environment:
+    HOME: "{{ ansible_user_dir }}"
+  register: server_config_effective_git_identity
+  changed_when: false
+  failed_when: >-
+    server_config_effective_git_identity.rc != 0
+    or server_config_effective_git_identity.stdout_lines | length != 2
+  no_log: true
+  tags:
+    - user-config
+    - git
 
 - name: Inspect the Pi settings file
   ansible.builtin.stat:
