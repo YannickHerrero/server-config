@@ -1,0 +1,60 @@
+---
+- name: Inspect the onboarding binary
+  ansible.builtin.stat:
+    path: "{{ server_config_repo_dir }}/onboarding/target/release/server-onboarding"
+  register: server_config_onboarding_binary
+  tags:
+    - onboarding
+
+- name: Build the pinned onboarding TUI
+  when: not ansible_check_mode
+  ansible.builtin.command:
+    argv:
+      - "{{ ansible_user_dir }}/.local/bin/mise"
+      - exec
+      - rust@1.95.0
+      - --
+      - cargo
+      - build
+      - --locked
+      - --release
+      - --manifest-path
+      - "{{ server_config_repo_dir }}/onboarding/Cargo.toml"
+  environment:
+    HOME: "{{ ansible_user_dir }}"
+    PATH: "{{ ansible_user_dir }}/.local/share/mise/shims:{{ ansible_user_dir }}/.local/bin:/usr/bin:/bin"
+  register: server_config_onboarding_build
+  changed_when: >-
+    not server_config_onboarding_binary.stat.exists
+    or 'Compiling server-onboarding' in server_config_onboarding_build.stderr
+  tags:
+    - onboarding
+
+- name: Link the onboarding TUI binary
+  ansible.builtin.file:
+    src: "{{ server_config_repo_dir }}/onboarding/target/release/server-onboarding"
+    dest: "{{ ansible_user_dir }}/.local/bin/server-onboarding"
+    owner: "{{ ansible_user_id }}"
+    group: "{{ ansible_user_gid }}"
+    state: link
+    force: true
+  tags:
+    - onboarding
+
+- name: Verify the onboarding TUI version
+  when: not ansible_check_mode
+  ansible.builtin.command:
+    argv:
+      - "{{ ansible_user_dir }}/.local/bin/server-onboarding"
+      - --version
+  environment:
+    HOME: "{{ ansible_user_dir }}"
+    SERVER_CONFIG_ROOT: "{{ server_config_repo_dir }}"
+  register: server_config_onboarding_version_output
+  changed_when: false
+  failed_when: >-
+    server_config_onboarding_version_output.rc != 0
+    or server_config_onboarding_version_output.stdout
+    != 'server-onboarding ' + server_config_onboarding_version
+  tags:
+    - onboarding

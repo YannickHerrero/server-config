@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+ROOT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+ONBOARDING_BINARY="$HOME/.local/bin/server-onboarding"
+
+if [[ ! -x $ONBOARDING_BINARY ]]; then
+    printf 'error: onboarding is not installed; run ./bin/converge first\n' >&2
+    exit 1
+fi
+
+export SERVER_CONFIG_ROOT="$ROOT_DIR"
+exec "$ONBOARDING_BINARY" "$@"

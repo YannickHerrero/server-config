@@ -263,6 +263,11 @@
       tags:
         - shell
 
+    - name: Build the interactive onboarding
+      ansible.builtin.import_tasks: tasks/onboarding.yml
+      tags:
+        - onboarding
+
     - name: Configure Neovim
       ansible.builtin.import_tasks: tasks/neovim.yml
       tags:

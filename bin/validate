@@ -14,11 +14,15 @@ if (( ${#missing[@]} > 0 )); then
     exit 1
 fi
 
-shellcheck install.sh bin/apply bin/check bin/converge bin/doctor bin/validate
+shellcheck install.sh bin/apply bin/check bin/converge bin/doctor bin/onboard bin/validate
 zsh -n config/zsh/zshenv config/zsh/.zshrc config/zsh/*.zsh
 python3 -m json.tool config/pi/settings.desired.json >/dev/null
 python3 -m json.tool config/nvim/lazy-lock.json >/dev/null
-python3 -c 'import tomllib; tomllib.load(open("config/herdr/config.toml", "rb")); tomllib.load(open("config/mise/config.toml", "rb")); tomllib.load(open("config/nvim/stylua.toml", "rb")); tomllib.load(open("config/ohmyposh/zen.toml", "rb"))'
+python3 -c 'import tomllib; tomllib.load(open("config/herdr/config.toml", "rb")); tomllib.load(open("config/mise/config.toml", "rb")); tomllib.load(open("config/nvim/stylua.toml", "rb")); tomllib.load(open("config/ohmyposh/zen.toml", "rb")); tomllib.load(open("onboarding/Cargo.toml", "rb"))'
+test -s onboarding/Cargo.lock
+if command -v cargo >/dev/null 2>&1; then
+    cargo fmt --manifest-path onboarding/Cargo.toml --check
+fi
 python3 - <<'PY'
 import os
 from pathlib import Path

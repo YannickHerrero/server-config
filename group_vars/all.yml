@@ -16,6 +16,7 @@ server_config_legacy_node_install_dir: /opt/node-v24.16.0-linux-x64
 server_config_legacy_node_archive_path: /var/cache/server-config/node-v24.16.0-linux-x64.tar.xz
 
 server_config_herdr_version: "0.7.1"
+server_config_onboarding_version: "0.1.0"
 server_config_herdr_url: https://github.com/herdrdev/herdr/releases/download/v0.7.1/herdr-linux-x86_64
 server_config_herdr_sha256: b965acaffc2c22f54b6e6c64af7cf8e98a3f4ac2622630a0599c67a4b9d8a654
 

@@ -6,6 +6,7 @@ export PATH="$HOME/.local/share/mise/shims:$HOME/.local/bin:$PATH"
 EXPECTED_NODE_VERSION=$(awk -F'"' '/^server_config_node_version:/ {print $2}' "$ROOT_DIR/group_vars/all.yml")
 EXPECTED_PI_VERSION=$(awk -F'"' '/^server_config_pi_version:/ {print $2}' "$ROOT_DIR/group_vars/all.yml")
 EXPECTED_HERDR_VERSION=$(awk -F'"' '/^server_config_herdr_version:/ {print $2}' "$ROOT_DIR/group_vars/all.yml")
+EXPECTED_ONBOARDING_VERSION=$(awk -F'"' '/^server_config_onboarding_version:/ {print $2}' "$ROOT_DIR/group_vars/all.yml")
 EXPECTED_SWAP_PATH=$(awk '/^server_config_swap_path:/ {print $2}' "$ROOT_DIR/group_vars/all.yml")
 failures=0
 
@@ -212,6 +213,21 @@ if git config --global --get user.name >/dev/null 2>&1 \
     pass "Git name and email are configured"
 else
     warn "Git identity is missing; run ./bin/onboard"
+fi
+
+section "Interactive onboarding"
+onboarding_binary="$HOME/.local/bin/server-onboarding"
+if [[ -x $onboarding_binary ]]; then
+    installed_onboarding_version=$($onboarding_binary --version)
+    printf 'Onboarding: %s\n' "$installed_onboarding_version"
+    if [[ $installed_onboarding_version == "server-onboarding $EXPECTED_ONBOARDING_VERSION" ]] \
+        && SERVER_CONFIG_ROOT="$ROOT_DIR" "$onboarding_binary" --status >/dev/null 2>&1; then
+        pass "onboarding TUI and status checks are available"
+    else
+        fail "onboarding TUI verification failed"
+    fi
+else
+    fail "onboarding TUI is not installed at $onboarding_binary"
 fi
 
 section "Pi runtime"

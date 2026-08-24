@@ -39,26 +39,31 @@ exec /usr/bin/zsh -l
 herdr
 ```
 
-Start Pi inside a Herdr pane:
+Run the interactive onboarding for the remaining human steps:
 
 ```bash
-pi
+./bin/onboard
 ```
 
-Inside Pi, run `/login` and select a provider. Pi stores credentials in `~/.pi/agent/auth.json`; that file must never enter this repository.
+The TUI checks Tailscale, GitHub, Vercel, Pi, Git identity, and Ansible convergence. Select a step and press Enter. It temporarily restores the terminal before launching each official CLI, so device codes, browser URLs, sudo, and Pi `/login` work normally. The TUI never reads or stores authentication tokens.
 
-Authenticate the user-scoped deployment CLIs separately:
+The equivalent manual commands remain available if the TUI cannot start:
 
 ```bash
 gh auth login --git-protocol https
 vercel login
+pi                         # then run /login
+./bin/converge
 ```
+
+Pi stores credentials in `~/.pi/agent/auth.json`; that file must never enter this repository.
 
 No tracked configuration forces a dark or light palette. Herdr uses the terminal palette, Neovim keeps its default terminal-aware colors, Pi detects the terminal background, and the prompt uses transparent backgrounds.
 
 ## Daily commands
 
 ```bash
+./bin/onboard              # Interactive checklist for human setup
 ./bin/converge             # Check, approve, apply, prove changed=0, and diagnose
 ./bin/validate             # Static validation, no host changes
 ./bin/check                # Dry run with a diff
@@ -68,7 +73,7 @@ No tracked configuration forces a dark or light palette. Herdr uses the terminal
 
 `converge` asks for sudo once, shows the dry-run diff, waits for explicit approval, applies twice, and fails unless the second application reports `changed=0 failed=0`. Its latest logs are stored with private permissions in `~/.local/state/server-config/logs`.
 
-Git identity is optional local metadata. Keep it in the ignored file `config/git/identity.local`, using `config/git/identity.example` as its format. The playbook links it into the effective global Git configuration while preserving authentication managed by `gh`. Restrict the local file to mode `0600`.
+Git identity is optional local metadata. The onboarding form writes it to the ignored file `config/git/identity.local` with mode `0600`. The playbook links it into the effective global Git configuration while preserving authentication managed by `gh`. `config/git/identity.example` documents the file format.
 
 To inspect a remote host from a trusted control machine, create the ignored file `inventory/remote.local.yml` and pass it explicitly:
 
@@ -89,6 +94,7 @@ To inspect a remote host from a trusted control machine, create the ignored file
 - password-based OpenSSH for the managed user, with root login disabled
 - portable Zsh configuration with pinned plugins and a transparent prompt
 - optional local Git identity without publishing personal metadata
+- a pinned Ratatui onboarding TUI for interactive authentication and setup
 - tracked global `AGENTS.md` and stable Pi settings merged without touching authentication
 - tracked Herdr configuration with `Ctrl+A`, `|` vertical split, and `-` horizontal split
 - tracked Neovim configuration and plugin lockfile without tmux integration or a forced color theme
