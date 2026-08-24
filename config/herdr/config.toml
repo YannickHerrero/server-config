@@ -8,6 +8,10 @@ auto_switch = false
 version_check = false
 manifest_check = false
 
+[terminal]
+default_shell = "/usr/bin/zsh"
+shell_mode = "login"
+
 [keys]
 prefix = "ctrl+a"
 split_vertical = "prefix+|"
