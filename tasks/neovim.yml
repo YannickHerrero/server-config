@@ -1,0 +1,107 @@
+---
+- name: Create Neovim state directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    owner: "{{ ansible_user_id }}"
+    group: "{{ ansible_user_gid }}"
+    mode: "0700"
+    state: directory
+  loop:
+    - "{{ ansible_user_dir }}/.config"
+    - "{{ ansible_user_dir }}/.local/share/nvim"
+    - "{{ ansible_user_dir }}/.local/state/nvim"
+  tags:
+    - neovim
+
+- name: Inspect the existing Neovim configuration
+  ansible.builtin.stat:
+    path: "{{ ansible_user_dir }}/.config/nvim"
+    follow: false
+  register: server_config_nvim_config
+  tags:
+    - neovim
+
+- name: Back up an unmanaged Neovim configuration
+  when:
+    - server_config_nvim_config.stat.exists
+    - not server_config_nvim_config.stat.islnk
+  ansible.builtin.copy:
+    src: "{{ ansible_user_dir }}/.config/nvim"
+    dest: "{{ ansible_user_dir }}/.local/state/server-config/backups/nvim"
+    remote_src: true
+    force: false
+    owner: "{{ ansible_user_id }}"
+    group: "{{ ansible_user_gid }}"
+    mode: preserve
+  tags:
+    - neovim
+
+- name: Remove a backed-up unmanaged Neovim configuration
+  when:
+    - server_config_nvim_config.stat.exists
+    - not server_config_nvim_config.stat.islnk
+  ansible.builtin.file:
+    path: "{{ ansible_user_dir }}/.config/nvim"
+    state: absent
+  tags:
+    - neovim
+
+- name: Link the tracked Neovim configuration
+  ansible.builtin.file:
+    src: "{{ server_config_repo_dir }}/config/nvim"
+    dest: "{{ ansible_user_dir }}/.config/nvim"
+    owner: "{{ ansible_user_id }}"
+    group: "{{ ansible_user_gid }}"
+    state: link
+    force: true
+  tags:
+    - neovim
+
+- name: Inspect the Neovim plugin installation
+  ansible.builtin.stat:
+    path: "{{ ansible_user_dir }}/.local/share/nvim/lazy/lazy.nvim"
+  register: server_config_nvim_plugins
+  tags:
+    - neovim
+
+- name: Synchronize pinned Neovim plugins
+  when: not ansible_check_mode
+  ansible.builtin.command:
+    argv:
+      - "{{ ansible_user_dir }}/.local/bin/mise"
+      - exec
+      - neovim@0.12.2
+      - --
+      - nvim
+      - --headless
+      - "+Lazy! restore"
+      - +qa
+  environment:
+    HOME: "{{ ansible_user_dir }}"
+    PATH: "{{ ansible_user_dir }}/.local/share/mise/shims:{{ ansible_user_dir }}/.local/bin:/usr/bin:/bin"
+  register: server_config_nvim_sync
+  changed_when: not server_config_nvim_plugins.stat.exists
+  failed_when: >-
+    server_config_nvim_sync.rc != 0
+    or 'Error detected' in server_config_nvim_sync.stderr
+  tags:
+    - neovim
+
+- name: Verify headless Neovim startup
+  when: not ansible_check_mode
+  ansible.builtin.command:
+    argv:
+      - "{{ ansible_user_dir }}/.local/bin/mise"
+      - exec
+      - neovim@0.12.2
+      - --
+      - nvim
+      - --headless
+      - "+lua assert(vim.fn.exists(':Lazy') == 2)"
+      - +qa
+  environment:
+    HOME: "{{ ansible_user_dir }}"
+    PATH: "{{ ansible_user_dir }}/.local/share/mise/shims:{{ ansible_user_dir }}/.local/bin:/usr/bin:/bin"
+  changed_when: false
+  tags:
+    - neovim

@@ -7,7 +7,7 @@ Reproducible configuration for a small Ubuntu development server. The repository
 - Ubuntu Server 24.04 LTS
 - x86-64
 - a non-root user with sudo access
-- an SSH key installed before bootstrap
+- an initial SSH access method installed before bootstrap
 
 Ubuntu release upgrades stay outside the playbook because they require a reboot and recovery checks.
 
@@ -32,10 +32,10 @@ sudo tailscale up --hostname="$(hostname)" --operator="$(id -un)" --ssh=false
 ./install.sh
 ```
 
-The second application verifies the Tailscale address before it restricts incoming traffic. Open a new login shell when it finishes:
+The second application verifies the Tailscale address before it restricts incoming traffic. Open the managed Zsh login shell when it finishes:
 
 ```bash
-exec "$SHELL" -l
+exec /usr/bin/zsh -l
 herdr
 ```
 
@@ -46,6 +46,15 @@ pi
 ```
 
 Inside Pi, run `/login` and select a provider. Pi stores credentials in `~/.pi/agent/auth.json`; that file must never enter this repository.
+
+Authenticate the user-scoped deployment CLIs separately:
+
+```bash
+gh auth login --git-protocol https
+vercel login
+```
+
+No tracked configuration forces a dark or light palette. Herdr uses the terminal palette, Neovim keeps its default terminal-aware colors, Pi detects the terminal background, and the prompt uses transparent backgrounds.
 
 ## Daily commands
 
@@ -69,12 +78,16 @@ To inspect a remote host from a trusted control machine, create the ignored file
 - an 8 GiB swap file
 - weekly SSD TRIM
 - UTC system time
-- pinned Node.js, Pi, and Herdr versions
+- pinned mise, Node.js, Bun, pnpm, Rust, Pi, Herdr, gh, Vercel, Neovim, LSP, formatter, and terminal CLI versions
 - Tailscale installation with interactive authentication
 - UFW with public traffic denied and SSH allowed only through Tailscale
 - password-based OpenSSH for the managed user, with root login disabled
+- portable Zsh configuration with pinned plugins and a transparent prompt
+- tracked global `AGENTS.md` and stable Pi settings merged without touching authentication
+- tracked Herdr configuration with `Ctrl+A`, `|` vertical split, and `-` horizontal split
+- tracked Neovim configuration and plugin lockfile without tmux integration or a forced color theme
 - removal of the unused `bind9` server
-- read-only checks for the OS, RAID, storage, private access, network, KVM, Node.js, Pi, and Herdr
+- read-only checks for the OS, RAID, storage, private access, network, KVM, shell, user tools, Pi, and Herdr
 
 The playbook does not remove packages that were installed manually.
 
@@ -83,17 +96,17 @@ The playbook does not remove packages that were installed manually.
 - Ubuntu release upgrades
 - tailnet policy, Tailscale authentication, key expiry, or sudo policy
 - Android SDK, emulator, Java, browsers, or Maestro
-- application runtimes other than the Node.js version required by Pi
 - Docker
-- shell, editor, or Git dotfiles
+- Git identity
 - application services, repositories, user data, torrents, or backups
-- Pi authentication, settings, sessions, extensions, skills, prompts, or themes
+- Pi authentication, mutable state, sessions, extensions, skills, prompts, packages, or themes
+- gh and Vercel authentication
 
 Add these only after the server needs them.
 
 ## Version updates
 
-Downloaded tools use versions and checksums declared in `group_vars/all.yml`. Update that file through a reviewed commit, then run `./bin/check` and `./bin/apply`. Do not update Pi directly on the host.
+Downloaded bootstrap tools use versions and checksums declared in `group_vars/all.yml`. User runtimes and CLIs use exact versions in `config/mise/config.toml`. Update these files through a reviewed commit, then run `./bin/check` and `./bin/apply`. Do not run `mise use -g`, `pi update`, or global npm installs directly on the host.
 
 ## Secrets
 

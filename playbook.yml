@@ -263,6 +263,11 @@
       tags:
         - shell
 
+    - name: Configure Neovim
+      ansible.builtin.import_tasks: tasks/neovim.yml
+      tags:
+        - neovim
+
     - name: Install the Tailscale archive key
       become: true
       ansible.builtin.get_url:

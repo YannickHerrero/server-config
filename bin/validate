@@ -17,7 +17,8 @@ fi
 shellcheck install.sh bin/apply bin/check bin/doctor bin/validate
 zsh -n config/zsh/zshenv config/zsh/.zshrc config/zsh/*.zsh
 python3 -m json.tool config/pi/settings.desired.json >/dev/null
-python3 -c 'import tomllib; tomllib.load(open("config/herdr/config.toml", "rb")); tomllib.load(open("config/mise/config.toml", "rb")); tomllib.load(open("config/ohmyposh/zen.toml", "rb"))'
+python3 -m json.tool config/nvim/lazy-lock.json >/dev/null
+python3 -c 'import tomllib; tomllib.load(open("config/herdr/config.toml", "rb")); tomllib.load(open("config/mise/config.toml", "rb")); tomllib.load(open("config/nvim/stylua.toml", "rb")); tomllib.load(open("config/ohmyposh/zen.toml", "rb"))'
 yamllint .ansible-lint .yamllint group_vars/all.yml inventory/localhost.yml playbook.yml
 ansible-playbook --syntax-check playbook.yml
 ansible-lint playbook.yml
