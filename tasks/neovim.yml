@@ -79,6 +79,7 @@
   environment:
     HOME: "{{ ansible_user_dir }}"
     PATH: "{{ ansible_user_dir }}/.local/share/mise/shims:{{ ansible_user_dir }}/.local/bin:/usr/bin:/bin"
+    SERVER_CONFIG_NVIM_BOOTSTRAP: "1"
   register: server_config_nvim_sync
   changed_when: not server_config_nvim_plugins.stat.exists
   failed_when: >-
@@ -97,7 +98,11 @@
       - --
       - nvim
       - --headless
-      - "+lua assert(vim.fn.exists(':Lazy') == 2)"
+      - >-
+        +lua assert(vim.fn.exists(':Lazy') == 2);
+        for _, lang in ipairs({ 'bash', 'lua', 'rust', 'tsx', 'typescript' }) do
+          assert(pcall(vim.treesitter.language.add, lang), 'missing parser ' .. lang)
+        end
       - +qa
   environment:
     HOME: "{{ ansible_user_dir }}"

@@ -179,10 +179,10 @@ if [[ -L $HOME/.config/nvim ]]; then
 else
     fail "Neovim configuration is not linked to server-config"
 fi
-if nvim --headless '+lua assert(vim.fn.exists(":Lazy") == 2)' +qa >/dev/null 2>&1; then
-    pass "headless Neovim startup succeeds"
+if nvim --headless '+lua assert(vim.fn.exists(":Lazy") == 2); assert(pcall(vim.treesitter.language.add, "lua"))' +qa >/dev/null 2>&1; then
+    pass "headless Neovim startup and parser loading succeed"
 else
-    fail "headless Neovim startup failed"
+    fail "headless Neovim startup or parser loading failed"
 fi
 
 section "User toolchain"

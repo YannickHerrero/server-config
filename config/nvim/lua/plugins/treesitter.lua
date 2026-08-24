@@ -1,3 +1,29 @@
+local parsers = {
+  "bash",
+  "c",
+  "comment",
+  "css",
+  "html",
+  "javascript",
+  "jsdoc",
+  "json",
+  "lua",
+  "luadoc",
+  "luap",
+  "markdown",
+  "markdown_inline",
+  "printf",
+  "query",
+  "regex",
+  "rust",
+  "toml",
+  "tsx",
+  "typescript",
+  "vim",
+  "vimdoc",
+  "yaml",
+}
+
 return {
   {
     "nvim-treesitter/nvim-treesitter",
@@ -5,31 +31,10 @@ return {
     lazy = false,
     build = ":TSUpdate",
     config = function()
-      require("nvim-treesitter").install({
-        "bash",
-        "c",
-        "comment",
-        "css",
-        "html",
-        "javascript",
-        "jsdoc",
-        "json",
-        "lua",
-        "luadoc",
-        "luap",
-        "markdown",
-        "markdown_inline",
-        "printf",
-        "query",
-        "regex",
-        "rust",
-        "toml",
-        "tsx",
-        "typescript",
-        "vim",
-        "vimdoc",
-        "yaml",
-      })
+      local installation = require("nvim-treesitter").install(parsers)
+      if vim.env.SERVER_CONFIG_NVIM_BOOTSTRAP == "1" then
+        installation:wait(300000)
+      end
 
       vim.treesitter.language.register("json", "jsonc")
 
