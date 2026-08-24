@@ -221,3 +221,140 @@
       changed_when: true
       tags:
         - swap
+
+    - name: Inspect the pinned Node.js installation
+      ansible.builtin.stat:
+        path: "{{ server_config_node_install_dir }}/bin/node"
+      register: server_config_node_install
+      tags:
+        - node
+        - pi
+
+    - name: Report a pending Node.js installation in check mode
+      when:
+        - ansible_check_mode
+        - not server_config_node_install.stat.exists
+      ansible.builtin.debug:
+        msg: "Node.js {{ server_config_node_version }} would be installed."
+      changed_when: true
+      tags:
+        - node
+        - pi
+
+    - name: Create the download cache
+      become: true
+      ansible.builtin.file:
+        path: /var/cache/server-config
+        owner: root
+        group: root
+        mode: "0755"
+        state: directory
+      tags:
+        - node
+        - pi
+
+    - name: Download the pinned Node.js archive
+      become: true
+      when: not ansible_check_mode
+      ansible.builtin.get_url:
+        url: "{{ server_config_node_download_url }}"
+        dest: "{{ server_config_node_archive_path }}"
+        checksum: "sha256:{{ server_config_node_sha256 }}"
+        owner: root
+        group: root
+        mode: "0644"
+      tags:
+        - node
+        - pi
+
+    - name: Install the pinned Node.js archive
+      become: true
+      when: not ansible_check_mode
+      ansible.builtin.unarchive:
+        src: "{{ server_config_node_archive_path }}"
+        dest: /opt
+        remote_src: true
+        creates: "{{ server_config_node_install_dir }}/bin/node"
+      tags:
+        - node
+        - pi
+
+    - name: Link Node.js commands into the system path
+      become: true
+      when:
+        - not ansible_check_mode or server_config_node_install.stat.exists
+      ansible.builtin.file:
+        src: "{{ server_config_node_install_dir }}/bin/{{ item }}"
+        dest: "/usr/local/bin/{{ item }}"
+        owner: root
+        group: root
+        state: link
+        force: true
+      loop:
+        - corepack
+        - node
+        - npm
+        - npx
+      tags:
+        - node
+        - pi
+
+    - name: Create user-local package directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        owner: "{{ ansible_user_id }}"
+        group: "{{ ansible_user_gid }}"
+        mode: "0755"
+        state: directory
+      loop:
+        - "{{ ansible_user_dir }}/.cache/npm"
+        - "{{ ansible_user_dir }}/.local/bin"
+        - "{{ ansible_user_dir }}/.local/lib"
+      tags:
+        - pi
+
+    - name: Read the installed Pi version
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_user_dir }}/.local/bin/pi"
+          - --version
+      environment:
+        HOME: "{{ ansible_user_dir }}"
+        PATH: /usr/local/bin:/usr/bin:/bin
+      register: server_config_installed_pi
+      changed_when: false
+      failed_when: false
+      check_mode: false
+      tags:
+        - pi
+
+    - name: Report a pending Pi installation in check mode
+      when:
+        - ansible_check_mode
+        - server_config_installed_pi.stdout != server_config_pi_version
+      ansible.builtin.debug:
+        msg: "Pi {{ server_config_pi_version }} would be installed."
+      changed_when: true
+      tags:
+        - pi
+
+    - name: Install the pinned Pi coding agent
+      when:
+        - not ansible_check_mode
+        - server_config_installed_pi.stdout != server_config_pi_version
+      ansible.builtin.command:
+        argv:
+          - /usr/local/bin/npm
+          - install
+          - --global
+          - --prefix
+          - "{{ ansible_user_dir }}/.local"
+          - --ignore-scripts
+          - "@earendil-works/pi-coding-agent@{{ server_config_pi_version }}"
+      environment:
+        HOME: "{{ ansible_user_dir }}"
+        PATH: /usr/local/bin:/usr/bin:/bin
+        npm_config_cache: "{{ ansible_user_dir }}/.cache/npm"
+      changed_when: true
+      tags:
+        - pi

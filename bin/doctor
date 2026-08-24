@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+ROOT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+EXPECTED_NODE_VERSION=$(awk -F'"' '/^server_config_node_version:/ {print $2}' "$ROOT_DIR/group_vars/all.yml")
+EXPECTED_PI_VERSION=$(awk -F'"' '/^server_config_pi_version:/ {print $2}' "$ROOT_DIR/group_vars/all.yml")
 failures=0
 
 section() {
@@ -99,6 +102,44 @@ if [[ -e /var/run/reboot-required ]]; then
     warn "a reboot is required"
 else
     pass "no reboot is currently required"
+fi
+
+section "Pi runtime"
+if command -v node >/dev/null 2>&1; then
+    installed_node_version=$(node --version)
+    printf 'Node.js: %s\n' "$installed_node_version"
+    if [[ ${installed_node_version#v} == "$EXPECTED_NODE_VERSION" ]]; then
+        pass "Node.js matches the pinned version"
+    else
+        fail "Node.js does not match the pinned version $EXPECTED_NODE_VERSION"
+    fi
+else
+    fail "Node.js is not available"
+fi
+
+pi_binary="$HOME/.local/bin/pi"
+if [[ -x $pi_binary ]]; then
+    installed_pi_version=$($pi_binary --version)
+    printf 'Pi: %s\n' "$installed_pi_version"
+    if [[ $installed_pi_version == "$EXPECTED_PI_VERSION" ]]; then
+        pass "Pi matches the pinned version"
+    else
+        fail "Pi does not match the pinned version $EXPECTED_PI_VERSION"
+    fi
+else
+    fail "Pi is not installed at $pi_binary"
+fi
+
+pi_auth_file="$HOME/.pi/agent/auth.json"
+if [[ -e $pi_auth_file ]]; then
+    auth_mode=$(stat -c '%a' "$pi_auth_file")
+    if [[ $auth_mode == 600 ]]; then
+        pass "Pi authentication file permissions are 0600"
+    else
+        fail "Pi authentication file permissions are $auth_mode instead of 600"
+    fi
+else
+    warn "Pi is not authenticated yet; run pi and then /login"
 fi
 
 section "Disks"

@@ -4,6 +4,13 @@ server_config_supported_version: "24.04"
 server_config_supported_architecture: x86_64
 server_config_timezone: Etc/UTC
 
+server_config_node_version: "24.16.0"
+server_config_node_archive_path: /var/cache/server-config/node-v24.16.0-linux-x64.tar.xz
+server_config_node_install_dir: /opt/node-v24.16.0-linux-x64
+server_config_node_download_url: https://nodejs.org/dist/v24.16.0/node-v24.16.0-linux-x64.tar.xz
+server_config_node_sha256: d804845d34eddc21dc1092b519d643ef40b1f58ec5dec5c22b1f4bd8fabde6c9
+server_config_pi_version: "0.84.3"
+
 server_config_swap_enabled: true
 server_config_swap_path: /swapfile
 server_config_swap_size_mb: 8192
