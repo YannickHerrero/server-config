@@ -100,8 +100,13 @@ struct StatusSnapshot {
 impl StatusSnapshot {
     fn collect(root: &Path) -> Self {
         let git_identity_saved = valid_git_identity_file(&root.join("config/git/identity.local"));
-        let git_identity = command_succeeds("git", &["config", "--global", "--get", "user.name"])
-            && command_succeeds("git", &["config", "--global", "--get", "user.email"]);
+        let git_identity = command_succeeds(
+            "git",
+            &["config", "--global", "--includes", "--get", "user.name"],
+        ) && command_succeeds(
+            "git",
+            &["config", "--global", "--includes", "--get", "user.email"],
+        );
 
         Self {
             tailscale: command_succeeds("tailscale", &["ip", "-4"]),
