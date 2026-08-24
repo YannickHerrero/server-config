@@ -59,11 +59,14 @@ No tracked configuration forces a dark or light palette. Herdr uses the terminal
 ## Daily commands
 
 ```bash
+./bin/converge             # Check, approve, apply, prove changed=0, and diagnose
 ./bin/validate             # Static validation, no host changes
 ./bin/check                # Dry run with a diff
-./bin/apply                # Validate and apply
+./bin/apply                # Validate and apply once
 ./bin/doctor               # Read-only system report
 ```
+
+`converge` asks for sudo once, shows the dry-run diff, waits for explicit approval, applies twice, and fails unless the second application reports `changed=0 failed=0`. Its latest logs are stored with private permissions in `~/.local/state/server-config/logs`.
 
 To inspect a remote host from a trusted control machine, create the ignored file `inventory/remote.local.yml` and pass it explicitly:
 

@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+ROOT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/server-config/logs"
+CHECK_LOG="$LOG_DIR/check.log"
+APPLY_LOG="$LOG_DIR/apply.log"
+VERIFY_LOG="$LOG_DIR/verify.log"
+
+cd "$ROOT_DIR"
+umask 077
+mkdir -p "$LOG_DIR"
+chmod 700 "$LOG_DIR"
+
+"$ROOT_DIR/bin/validate"
+sudo -v
+
+printf '\nRunning the Ansible dry run...\n'
+ansible-playbook --check --diff "$@" "$ROOT_DIR/playbook.yml" | tee "$CHECK_LOG"
+
+if [[ ! -t 0 ]]; then
+    printf 'Refusing to apply without an interactive approval.\n' >&2
+    exit 1
+fi
+
+printf '\nApply these changes and verify convergence? [y/N] '
+read -r approval
+case "$approval" in
+    y | Y | yes | YES | o | O | oui | OUI) ;;
+    *)
+        printf 'Application cancelled.\n'
+        exit 0
+        ;;
+esac
+
+printf '\nApplying the configuration...\n'
+ansible-playbook "$@" "$ROOT_DIR/playbook.yml" | tee "$APPLY_LOG"
+
+printf '\nVerifying idempotence...\n'
+ansible-playbook "$@" "$ROOT_DIR/playbook.yml" | tee "$VERIFY_LOG"
+
+if ! grep -Eq \
+    '^[[:alnum:]_.-]+[[:space:]]+:[[:space:]]+ok=[0-9]+[[:space:]]+changed=0[[:space:]]+unreachable=0[[:space:]]+failed=0' \
+    "$VERIFY_LOG"; then
+    printf '\nConvergence failed. Final recap:\n' >&2
+    grep -A2 'PLAY RECAP' "$VERIFY_LOG" >&2 || true
+    printf 'Logs: %s\n' "$LOG_DIR" >&2
+    exit 1
+fi
+
+"$ROOT_DIR/bin/doctor"
+
+printf '\nConvergence verified:\n'
+grep -A2 'PLAY RECAP' "$VERIFY_LOG"
+printf 'Logs: %s\n' "$LOG_DIR"
