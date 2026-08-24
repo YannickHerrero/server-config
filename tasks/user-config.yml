@@ -1,0 +1,120 @@
+---
+- name: Verify the local server-config checkout
+  ansible.builtin.assert:
+    that:
+      - playbook_dir == server_config_repo_dir
+    fail_msg: >-
+      Apply server-config from {{ server_config_repo_dir }} so managed user symlinks point to the local checkout.
+  tags:
+    - user-config
+
+- name: Create user configuration directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    owner: "{{ ansible_user_id }}"
+    group: "{{ ansible_user_gid }}"
+    mode: "0700"
+    state: directory
+  loop:
+    - "{{ ansible_user_dir }}/.config/herdr"
+    - "{{ ansible_user_dir }}/.local/state/server-config/backups"
+    - "{{ ansible_user_dir }}/.pi/agent"
+  tags:
+    - user-config
+
+- name: Inspect existing managed user files
+  ansible.builtin.stat:
+    path: "{{ item.path }}"
+    follow: false
+  loop:
+    - path: "{{ ansible_user_dir }}/.config/herdr/config.toml"
+      backup: herdr-config.toml
+    - path: "{{ ansible_user_dir }}/.pi/agent/AGENTS.md"
+      backup: pi-AGENTS.md
+  register: server_config_managed_user_files
+  tags:
+    - user-config
+
+- name: Back up unmanaged user files before linking
+  when:
+    - item.stat.exists
+    - not item.stat.islnk
+  ansible.builtin.copy:
+    src: "{{ item.item.path }}"
+    dest: "{{ ansible_user_dir }}/.local/state/server-config/backups/{{ item.item.backup }}"
+    remote_src: true
+    force: false
+    owner: "{{ ansible_user_id }}"
+    group: "{{ ansible_user_gid }}"
+    mode: "0600"
+  loop: "{{ server_config_managed_user_files.results }}"
+  tags:
+    - user-config
+
+- name: Link tracked user configuration
+  ansible.builtin.file:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    owner: "{{ ansible_user_id }}"
+    group: "{{ ansible_user_gid }}"
+    state: link
+    force: true
+  loop:
+    - src: "{{ server_config_repo_dir }}/config/herdr/config.toml"
+      dest: "{{ ansible_user_dir }}/.config/herdr/config.toml"
+    - src: "{{ server_config_repo_dir }}/config/pi/AGENTS.md"
+      dest: "{{ ansible_user_dir }}/.pi/agent/AGENTS.md"
+  tags:
+    - user-config
+
+- name: Inspect the Pi settings file
+  ansible.builtin.stat:
+    path: "{{ ansible_user_dir }}/.pi/agent/settings.json"
+  register: server_config_pi_settings_stat
+  tags:
+    - user-config
+    - pi
+
+- name: Read the existing Pi settings
+  when: server_config_pi_settings_stat.stat.exists
+  ansible.builtin.slurp:
+    src: "{{ ansible_user_dir }}/.pi/agent/settings.json"
+  register: server_config_pi_settings_raw
+  tags:
+    - user-config
+    - pi
+
+- name: Build the managed Pi settings
+  ansible.builtin.set_fact:
+    server_config_pi_settings_existing: >-
+      {{
+        (
+          (server_config_pi_settings_raw.content | b64decode | from_json)
+          if server_config_pi_settings_stat.stat.exists
+          else {}
+        )
+        | dict2items
+        | rejectattr('key', 'equalto', 'theme')
+        | items2dict
+      }}
+    server_config_pi_settings_desired: >-
+      {{ lookup('ansible.builtin.file', playbook_dir + '/config/pi/settings.desired.json') | from_json }}
+  tags:
+    - user-config
+    - pi
+
+- name: Merge stable Pi settings without touching authentication
+  ansible.builtin.copy:
+    content: >-
+      {{
+        server_config_pi_settings_existing
+        | combine(server_config_pi_settings_desired, recursive=true)
+        | to_nice_json(indent=2, sort_keys=true)
+      }}
+    dest: "{{ ansible_user_dir }}/.pi/agent/settings.json"
+    owner: "{{ ansible_user_id }}"
+    group: "{{ ansible_user_gid }}"
+    mode: "0600"
+  tags:
+    - user-config
+    - pi

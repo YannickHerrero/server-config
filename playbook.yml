@@ -384,6 +384,11 @@
       tags:
         - herdr
 
+    - name: Configure tracked user settings
+      ansible.builtin.import_tasks: tasks/user-config.yml
+      tags:
+        - user-config
+
     - name: Install the Tailscale archive key
       become: true
       ansible.builtin.get_url:
