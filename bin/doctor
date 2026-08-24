@@ -4,6 +4,7 @@ set -Eeuo pipefail
 ROOT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 EXPECTED_NODE_VERSION=$(awk -F'"' '/^server_config_node_version:/ {print $2}' "$ROOT_DIR/group_vars/all.yml")
 EXPECTED_PI_VERSION=$(awk -F'"' '/^server_config_pi_version:/ {print $2}' "$ROOT_DIR/group_vars/all.yml")
+EXPECTED_SWAP_PATH=$(awk '/^server_config_swap_path:/ {print $2}' "$ROOT_DIR/group_vars/all.yml")
 failures=0
 
 section() {
@@ -84,10 +85,10 @@ df -h / /boot
 
 section "Memory and swap"
 free -h
-if swapon --show=NAME --noheadings | grep -Fxq /swapfile; then
-    pass "/swapfile is active"
+if swapon --show=NAME --noheadings | grep -Fxq "$EXPECTED_SWAP_PATH"; then
+    pass "$EXPECTED_SWAP_PATH is active"
 else
-    fail "/swapfile is not active"
+    fail "$EXPECTED_SWAP_PATH is not active"
 fi
 
 section "Timers and updates"
