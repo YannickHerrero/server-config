@@ -117,3 +117,11 @@
   tags:
     - shell
     - zsh
+
+- name: Remove a completion dump created before shell convergence
+  ansible.builtin.file:
+    path: "{{ server_config_repo_dir }}/config/zsh/.zcompdump"
+    state: absent
+  tags:
+    - shell
+    - zsh

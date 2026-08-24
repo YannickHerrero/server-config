@@ -14,5 +14,7 @@ setopt hist_find_no_dups
 autoload -Uz history-search-end
 zle -N history-beginning-search-backward-end history-search-end
 zle -N history-beginning-search-forward-end history-search-end
-bindkey "$terminfo[kcuu1]" history-beginning-search-backward-end
-bindkey "$terminfo[kcud1]" history-beginning-search-forward-end
+[[ -n ${terminfo[kcuu1]:-} ]] && \
+    bindkey "$terminfo[kcuu1]" history-beginning-search-backward-end
+[[ -n ${terminfo[kcud1]:-} ]] && \
+    bindkey "$terminfo[kcud1]" history-beginning-search-forward-end
