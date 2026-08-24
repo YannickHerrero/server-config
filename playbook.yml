@@ -258,6 +258,11 @@
       tags:
         - user-config
 
+    - name: Configure the interactive shell
+      ansible.builtin.import_tasks: tasks/shell.yml
+      tags:
+        - shell
+
     - name: Install the Tailscale archive key
       become: true
       ansible.builtin.get_url:

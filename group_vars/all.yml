@@ -18,6 +18,20 @@ server_config_herdr_version: "0.7.1"
 server_config_herdr_url: https://github.com/herdrdev/herdr/releases/download/v0.7.1/herdr-linux-x86_64
 server_config_herdr_sha256: b965acaffc2c22f54b6e6c64af7cf8e98a3f4ac2622630a0599c67a4b9d8a654
 
+server_config_zsh_plugins:
+  - name: fzf-tab
+    repo: https://github.com/Aloxaf/fzf-tab.git
+    version: e394092c17277c84cb3d234917c4ac1073102ba6
+  - name: zsh-autosuggestions
+    repo: https://github.com/zsh-users/zsh-autosuggestions.git
+    version: 85919cd1ffa7d2d5412f6d3fe437ebdbeeec4fc5
+  - name: zsh-completions
+    repo: https://github.com/zsh-users/zsh-completions.git
+    version: 6d21c2a1de9cb88479a0e67df492da3f3bbdb054
+  - name: zsh-syntax-highlighting
+    repo: https://github.com/zsh-users/zsh-syntax-highlighting.git
+    version: 1d85c692615a25fe2293bdd44b34c217d5d2bf04
+
 server_config_tailscale_key_url: https://pkgs.tailscale.com/stable/ubuntu/noble.noarmor.gpg
 server_config_tailscale_key_sha256: 3e03dacf222698c60b8e2f990b809ca1b3e104de127767864284e6c228f1fb39
 server_config_tailscale_repository: >-
@@ -52,3 +66,4 @@ server_config_packages:
   - xz-utils
   - yamllint
   - zip
+  - zsh

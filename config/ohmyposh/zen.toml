@@ -1,0 +1,61 @@
+"$schema" = "https://raw.githubusercontent.com/JanDeDobbeleer/oh-my-posh/main/themes/schema.json"
+final_space = true
+version = 3
+
+[[blocks]]
+type = "prompt"
+alignment = "left"
+newline = true
+
+[[blocks.segments]]
+type = "path"
+style = "plain"
+background = "transparent"
+template = "{{ .Path }}"
+
+[blocks.segments.properties]
+style = "full"
+max_depth = 4
+
+[[blocks.segments]]
+type = "git"
+style = "plain"
+background = "transparent"
+template = " {{ .HEAD }}{{ if or (.Working.Changed) (.Staging.Changed) }}*{{ end }}{{ if gt .Behind 0 }} ⇣{{ end }}{{ if gt .Ahead 0 }} ⇡{{ end }}"
+
+[blocks.segments.properties]
+branch_icon = ""
+commit_icon = "@"
+fetch_status = true
+
+[[blocks]]
+type = "rprompt"
+overflow = "hidden"
+
+[[blocks.segments]]
+type = "executiontime"
+style = "plain"
+background = "transparent"
+template = "{{ .FormattedMs }}"
+
+[blocks.segments.properties]
+threshold = 1000
+
+[[blocks]]
+type = "prompt"
+alignment = "left"
+newline = true
+
+[[blocks.segments]]
+type = "text"
+style = "plain"
+background = "transparent"
+template = ">"
+
+[transient_prompt]
+background = "transparent"
+template = ">"
+
+[secondary_prompt]
+background = "transparent"
+template = ">>"

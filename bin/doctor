@@ -157,6 +157,24 @@ else
     warn "run sudo -v before doctor to inspect the effective UFW rules"
 fi
 
+section "Shell"
+login_shell=$(getent passwd "$USER" | cut -d: -f7)
+if [[ $login_shell == /usr/bin/zsh ]]; then
+    pass "Zsh is the login shell"
+else
+    fail "the login shell is $login_shell instead of /usr/bin/zsh"
+fi
+if [[ -L $HOME/.zshenv && -L $HOME/.config/zsh && -L $HOME/.config/ohmyposh/zen.toml ]]; then
+    pass "shell configuration is linked to server-config"
+else
+    fail "one or more shell configuration paths are not symlinks"
+fi
+if /usr/bin/zsh -lic 'command -v mise >/dev/null && command -v nvim >/dev/null' >/dev/null 2>&1; then
+    pass "managed Zsh starts with the mise toolchain"
+else
+    fail "managed Zsh startup failed"
+fi
+
 section "User toolchain"
 if command -v mise >/dev/null 2>&1; then
     printf 'mise: %s\n' "$(mise --version)"

@@ -21,6 +21,6 @@ fail() {
 printf 'Installing the local provisioning tools from Ubuntu...\n'
 sudo -v
 sudo apt-get update
-sudo apt-get install -y ansible-core ansible-lint shellcheck yamllint
+sudo apt-get install -y ansible-core ansible-lint shellcheck yamllint zsh
 
 exec "$ROOT_DIR/bin/apply"

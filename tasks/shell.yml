@@ -1,0 +1,119 @@
+---
+- name: Create shell state directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    owner: "{{ ansible_user_id }}"
+    group: "{{ ansible_user_gid }}"
+    mode: "0700"
+    state: directory
+  loop:
+    - "{{ ansible_user_dir }}/.cache/zsh"
+    - "{{ ansible_user_dir }}/.config/ohmyposh"
+    - "{{ ansible_user_dir }}/.local/share/server-config/zsh-plugins"
+    - "{{ ansible_user_dir }}/.local/state/zsh"
+  tags:
+    - shell
+    - zsh
+
+- name: Install pinned Zsh plugins
+  ansible.builtin.git:
+    repo: "{{ item.repo }}"
+    dest: "{{ ansible_user_dir }}/.local/share/server-config/zsh-plugins/{{ item.name }}"
+    version: "{{ item.version }}"
+    update: true
+    force: false
+  loop: "{{ server_config_zsh_plugins }}"
+  tags:
+    - shell
+    - zsh
+
+- name: Inspect existing shell configuration
+  ansible.builtin.stat:
+    path: "{{ item.path }}"
+    follow: false
+  loop:
+    - path: "{{ ansible_user_dir }}/.zshenv"
+      backup: zshenv
+    - path: "{{ ansible_user_dir }}/.config/zsh"
+      backup: zsh
+    - path: "{{ ansible_user_dir }}/.config/ohmyposh/zen.toml"
+      backup: ohmyposh-zen.toml
+  register: server_config_shell_files
+  tags:
+    - shell
+    - zsh
+
+- name: Back up unmanaged shell configuration
+  when:
+    - item.stat.exists
+    - not item.stat.islnk
+  ansible.builtin.copy:
+    src: "{{ item.item.path }}"
+    dest: "{{ ansible_user_dir }}/.local/state/server-config/backups/{{ item.item.backup }}"
+    remote_src: true
+    force: false
+    owner: "{{ ansible_user_id }}"
+    group: "{{ ansible_user_gid }}"
+    mode: preserve
+  loop: "{{ server_config_shell_files.results }}"
+  tags:
+    - shell
+    - zsh
+
+- name: Remove backed-up unmanaged shell paths
+  when:
+    - item.stat.exists
+    - not item.stat.islnk
+  ansible.builtin.file:
+    path: "{{ item.item.path }}"
+    state: absent
+  loop: "{{ server_config_shell_files.results }}"
+  tags:
+    - shell
+    - zsh
+
+- name: Link tracked shell configuration
+  ansible.builtin.file:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    owner: "{{ ansible_user_id }}"
+    group: "{{ ansible_user_gid }}"
+    state: link
+    force: true
+  loop:
+    - src: "{{ server_config_repo_dir }}/config/zsh/zshenv"
+      dest: "{{ ansible_user_dir }}/.zshenv"
+    - src: "{{ server_config_repo_dir }}/config/zsh"
+      dest: "{{ ansible_user_dir }}/.config/zsh"
+    - src: "{{ server_config_repo_dir }}/config/ohmyposh/zen.toml"
+      dest: "{{ ansible_user_dir }}/.config/ohmyposh/zen.toml"
+  tags:
+    - shell
+    - zsh
+
+- name: Select Zsh as the login shell
+  become: true
+  ansible.builtin.user:
+    name: "{{ ansible_user_id }}"
+    shell: /usr/bin/zsh
+  tags:
+    - shell
+    - zsh
+
+- name: Verify the managed Zsh environment
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/zsh
+      - -lic
+      - >-
+        [[ "$ZDOTDIR" == "$HOME/.config/zsh" ]]
+        && command -v mise >/dev/null
+        && command -v nvim >/dev/null
+        && command -v oh-my-posh >/dev/null
+        && command -v zoxide >/dev/null
+  environment:
+    HOME: "{{ ansible_user_dir }}"
+  changed_when: false
+  tags:
+    - shell
+    - zsh
