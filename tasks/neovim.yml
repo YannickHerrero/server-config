@@ -64,6 +64,13 @@
   tags:
     - neovim
 
+- name: Inspect the Neovim parser installation
+  ansible.builtin.stat:
+    path: "{{ ansible_user_dir }}/.local/share/nvim/site/parser/lua.so"
+  register: server_config_nvim_lua_parser
+  tags:
+    - neovim
+
 - name: Synchronize pinned Neovim plugins
   when: not ansible_check_mode
   ansible.builtin.command:
@@ -81,10 +88,40 @@
     PATH: "{{ ansible_user_dir }}/.local/share/mise/shims:{{ ansible_user_dir }}/.local/bin:/usr/bin:/bin"
     SERVER_CONFIG_NVIM_BOOTSTRAP: "1"
   register: server_config_nvim_sync
-  changed_when: not server_config_nvim_plugins.stat.exists
+  changed_when: >-
+    not server_config_nvim_plugins.stat.exists
+    or not server_config_nvim_lua_parser.stat.exists
   failed_when: >-
     server_config_nvim_sync.rc != 0
     or 'Error detected' in server_config_nvim_sync.stderr
+  tags:
+    - neovim
+
+- name: Inspect required Neovim parsers
+  when: not ansible_check_mode
+  ansible.builtin.stat:
+    path: "{{ ansible_user_dir }}/.local/share/nvim/site/parser/{{ item }}.so"
+  loop:
+    - bash
+    - lua
+    - rust
+    - tsx
+    - typescript
+  register: server_config_nvim_required_parsers
+  tags:
+    - neovim
+
+- name: Verify required Neovim parsers
+  when: not ansible_check_mode
+  ansible.builtin.assert:
+    that:
+      - >-
+        server_config_nvim_required_parsers.results
+        | rejectattr('stat.exists')
+        | list
+        | length == 0
+    fail_msg: One or more required Neovim parsers were not installed
+    quiet: true
   tags:
     - neovim
 
@@ -98,11 +135,7 @@
       - --
       - nvim
       - --headless
-      - >-
-        +lua assert(vim.fn.exists(':Lazy') == 2);
-        for _, lang in ipairs({ 'bash', 'lua', 'rust', 'tsx', 'typescript' }) do
-          assert(pcall(vim.treesitter.language.add, lang), 'missing parser ' .. lang)
-        end
+      - "+lua assert(vim.fn.exists(':Lazy') == 2)"
       - +qa
   environment:
     HOME: "{{ ansible_user_dir }}"
