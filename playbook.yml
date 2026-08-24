@@ -513,6 +513,16 @@
         - access
         - ssh
 
+    - name: Enable the OpenSSH socket
+      become: true
+      ansible.builtin.systemd_service:
+        name: ssh.socket
+        enabled: true
+        state: started
+      tags:
+        - access
+        - ssh
+
     - name: Read the effective OpenSSH configuration
       become: true
       ansible.builtin.command:
@@ -608,6 +618,42 @@
           - Tailscale direct
       register: server_config_ufw_tailscale_rule
       changed_when: "'Rules updated' in server_config_ufw_tailscale_rule.stdout"
+      tags:
+        - access
+        - firewall
+
+    - name: Read the configured UFW commands
+      become: true
+      ansible.builtin.command:
+        argv:
+          - ufw
+          - show
+          - added
+      register: server_config_ufw_added
+      changed_when: false
+      check_mode: false
+      tags:
+        - access
+        - firewall
+
+    - name: Remove the temporary release-upgrade SSH rule
+      become: true
+      when: "'port 1022' in server_config_ufw_added.stdout"
+      ansible.builtin.command:
+        argv:
+          - ufw
+          - delete
+          - allow
+          - in
+          - "on"
+          - tailscale0
+          - to
+          - any
+          - port
+          - "1022"
+          - proto
+          - tcp
+      changed_when: true
       tags:
         - access
         - firewall

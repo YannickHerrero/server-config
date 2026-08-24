@@ -107,7 +107,7 @@ else
 fi
 
 section "Private access"
-for unit in tailscaled ufw ssh; do
+for unit in tailscaled ufw ssh.socket; do
     if systemctl is-enabled --quiet "$unit" && systemctl is-active --quiet "$unit"; then
         pass "$unit is enabled and active"
     else
@@ -146,6 +146,11 @@ if sudo -n true 2>/dev/null; then
         pass "SSH is allowed on tailscale0"
     else
         fail "SSH is not allowed on tailscale0"
+    fi
+    if grep -q '1022/tcp' <<<"$ufw_status"; then
+        fail "the temporary release-upgrade SSH rule is still present"
+    else
+        pass "the temporary release-upgrade SSH rule is absent"
     fi
 else
     warn "run sudo -v before doctor to inspect the effective UFW rules"
