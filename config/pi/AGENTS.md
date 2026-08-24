@@ -6,20 +6,29 @@ Project-local `AGENTS.md`, `CLAUDE.md`, and release instructions override these 
 
 Keep work in three separate stages unless the user explicitly asks to advance:
 
-1. Plan. Inspect and propose behavior, affected files, risks, verification, and atomic commits. Do not modify files, run builds or tests, commit, push, deploy, or release.
-2. Implement and test. Begin only after explicit approval. Make small independently valid changes, run the documented verification, and create atomic commits. Do not push, deploy, or release.
-3. Release. Begin only after an explicit request to push, publish, deploy, upload, or release.
+1. **Plan.** Inspect and propose behavior, affected files, risks, verification, and atomic commits. Do not edit files, build, test, commit, push, deploy, or release.
+2. **Implement and test.** Begin only after explicit approval. Make small independently valid changes, run the documented verification, and create atomic commits. Do not push, deploy, or release.
+3. **Release.** Begin only after an explicit request to push, publish, deploy, upload, or release. Run the release preflight and publish only the intended commits or artifacts.
 
 At the end of each stage, state the result and the exact action needed to advance.
 
+## Skills
+
+- Load and follow `three-stage-workflow` for feature requests, bug fixes, repository changes, commits, pushes, and releases.
+- Always load and apply `unslop` before producing user-facing writing.
+- Read a skill completely when its description matches the task. Resolve its relative files from the skill directory.
+- Skills supplement these instructions. They do not override project-local rules.
+
 ## Git and safety
 
-- Inspect `git status --short` before edits, tests, applications, and commits.
-- Never overwrite, stage, restore, or commit unrelated changes.
-- Keep one logical change per conventional commit. Never amend.
-- Never force-push unless the user authorizes a specific rewrite after a verified backup. Use `--force-with-lease`, never `--force`.
+- Before editing or committing, inspect `git status --short`. Never overwrite, stage, restore, or commit unrelated user changes.
+- Make small atomic conventional commits. Keep one logical change per commit and run the project verification before each commit.
+- Never amend.
+- Never force-push unless the user explicitly authorizes a specific history rewrite after a verified backup and preflight. Always use `--force-with-lease`, never `--force`.
 - Never push or release without explicit approval in the current session.
+- The user prefers completed changes to be pushed. Proactively request push approval after implementation. Push approval does not authorize a deployment or release.
 - Never commit or print passwords, tokens, private keys, authentication files, session data, or other secrets.
+- Read and obey project instructions before changing code.
 
 ## Machine configuration
 
@@ -41,19 +50,21 @@ Do not make persistent changes directly with `apt install`, global npm installs,
 
 Project-specific dependencies belong in the project's own manifest and lockfile, not in `server-config`.
 
-Authentication, secrets, sessions, histories, caches, temporary diagnostics, and emergency recovery are not managed by Ansible. Any persistent emergency change must be reconciled into `server-config` immediately after access is restored.
+Authentication, secrets, sessions, histories, caches, temporary diagnostics, and emergency recovery are not managed by Ansible. Reconcile any persistent emergency change into `server-config` immediately after access is restored.
 
 If `server-config` is unavailable or has unrelated changes, stop and ask before changing the machine.
 
-## Operational configuration
+## Project-local operational configuration
 
-- Inspect documented ignored local configuration and credential locations before asking for recurring values.
-- Persist reusable non-secret metadata in the project's documented ignored local file.
-- Keep credentials at the documented secure location with restrictive permissions.
-- Do not rely on another project's environment or an earlier shell session when validating configuration.
+- Before asking for recurring release or service configuration, inspect the project's documented ignored local config files and external credential locations.
+- When the user provides reusable project-specific configuration, persist it in the project's documented ignored local file so future agents can use it without asking again.
+- Persist only non-secret metadata in project-local config. Keep credentials and private keys outside the repository at the documented secure location.
+- Confirm that local config is ignored before writing it, apply restrictive permissions, and validate from a clean shell without relying on another project's environment or an earlier shell session.
+- If the project has no documented ignored config or credential location, propose one and obtain approval before storing sensitive configuration.
 
 ## Verification
 
-- Run the project's documented build and test commands and report actual results.
-- Distinguish automated evidence from checks that require human interaction.
+- Use the project's documented build and test commands. Report real results, not assumptions.
+- Perform available visual verification after UI changes.
+- Distinguish automated evidence from interactions that require manual testing, such as gestures, system dialogs, audio, video, and native menu behavior.
 - Finish implementation and release reports with the actual Git status.
