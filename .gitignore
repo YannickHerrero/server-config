@@ -1,0 +1,20 @@
+# Local Ansible state
+.ansible/
+*.retry
+
+# Local inventories and credentials
+inventory/*.local.yml
+.env
+.env.*
+secrets/
+**/auth.json
+
+# Local development tools
+.venv/
+
+# Test and diagnostic output
+artifacts/
+
+# OS and editor files
+.DS_Store
+*.swp
