@@ -230,6 +230,21 @@ else
     fail "onboarding TUI is not installed at $onboarding_binary"
 fi
 
+section "Pi skills"
+pi_skills="$HOME/.pi/agent/skills"
+if [[ -L $pi_skills && $(readlink "$pi_skills") == "$ROOT_DIR/config/pi/skills" ]]; then
+    pass "Pi skills are linked to server-config"
+else
+    fail "Pi skills are not linked to server-config"
+fi
+for skill_name in three-stage-workflow unslop; do
+    if [[ -f $pi_skills/$skill_name/SKILL.md ]]; then
+        pass "$skill_name skill is installed"
+    else
+        fail "$skill_name skill is missing"
+    fi
+done
+
 section "Pi runtime"
 if command -v node >/dev/null 2>&1; then
     installed_node_version=$(node --version)

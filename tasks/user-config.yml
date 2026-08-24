@@ -68,6 +68,69 @@
   tags:
     - user-config
 
+- name: Inspect the existing Pi skills path
+  ansible.builtin.stat:
+    path: "{{ ansible_user_dir }}/.pi/agent/skills"
+    follow: false
+  register: server_config_pi_skills
+  tags:
+    - user-config
+    - pi
+
+- name: Refuse an unexpected Pi skills symlink
+  when:
+    - server_config_pi_skills.stat.exists
+    - server_config_pi_skills.stat.islnk
+  ansible.builtin.assert:
+    that:
+      - >-
+        server_config_pi_skills.stat.lnk_target
+        == server_config_repo_dir + '/config/pi/skills'
+    fail_msg: ~/.pi/agent/skills points outside server-config
+    quiet: true
+  tags:
+    - user-config
+    - pi
+
+- name: Back up unmanaged Pi skills
+  when:
+    - server_config_pi_skills.stat.exists
+    - not server_config_pi_skills.stat.islnk
+  ansible.builtin.copy:
+    src: "{{ ansible_user_dir }}/.pi/agent/skills"
+    dest: "{{ ansible_user_dir }}/.local/state/server-config/backups/pi-skills"
+    remote_src: true
+    force: false
+    owner: "{{ ansible_user_id }}"
+    group: "{{ ansible_user_gid }}"
+    mode: preserve
+  tags:
+    - user-config
+    - pi
+
+- name: Remove backed-up unmanaged Pi skills
+  when:
+    - server_config_pi_skills.stat.exists
+    - not server_config_pi_skills.stat.islnk
+  ansible.builtin.file:
+    path: "{{ ansible_user_dir }}/.pi/agent/skills"
+    state: absent
+  tags:
+    - user-config
+    - pi
+
+- name: Link the tracked Pi skills
+  ansible.builtin.file:
+    src: "{{ server_config_repo_dir }}/config/pi/skills"
+    dest: "{{ ansible_user_dir }}/.pi/agent/skills"
+    owner: "{{ ansible_user_id }}"
+    group: "{{ ansible_user_gid }}"
+    state: link
+    force: true
+  tags:
+    - user-config
+    - pi
+
 - name: Inspect the optional local Git identity
   ansible.builtin.stat:
     path: "{{ server_config_repo_dir }}/config/git/identity.local"

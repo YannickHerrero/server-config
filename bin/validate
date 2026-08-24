@@ -24,6 +24,29 @@ if command -v cargo >/dev/null 2>&1; then
     cargo fmt --manifest-path onboarding/Cargo.toml --check
 fi
 python3 - <<'PY'
+from pathlib import Path
+import re
+
+skills_root = Path("config/pi/skills")
+skills = sorted(skills_root.glob("*/SKILL.md"))
+assert [path.parent.name for path in skills] == ["three-stage-workflow", "unslop"], "unexpected Pi skills"
+for path in skills:
+    content = path.read_text()
+    assert content.startswith("---\n"), f"{path} has no frontmatter"
+    _, frontmatter, body = content.split("---", 2)
+    fields = {}
+    for line in frontmatter.strip().splitlines():
+        key, value = line.split(":", 1)
+        fields[key.strip()] = value.strip()
+    name = fields.get("name", "")
+    description = fields.get("description", "")
+    assert name == path.parent.name, f"{path} name does not match its directory"
+    assert re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", name), f"{path} has an invalid name"
+    assert 1 <= len(name) <= 64, f"{path} name is too long"
+    assert 1 <= len(description) <= 1024, f"{path} description is missing or too long"
+    assert body.strip(), f"{path} has no instructions"
+PY
+python3 - <<'PY'
 import os
 from pathlib import Path
 import subprocess

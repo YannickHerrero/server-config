@@ -95,7 +95,7 @@ To inspect a remote host from a trusted control machine, create the ignored file
 - portable Zsh configuration with pinned plugins and a transparent prompt
 - optional local Git identity without publishing personal metadata
 - a pinned Ratatui onboarding TUI for interactive authentication and setup
-- tracked global `AGENTS.md` and stable Pi settings merged without touching authentication
+- tracked global `AGENTS.md`, portable Pi skills, and stable Pi settings merged without touching authentication
 - tracked Herdr configuration with `Ctrl+A`, `|` vertical split, and `-` horizontal split
 - tracked Neovim configuration and plugin lockfile without tmux integration or a forced color theme
 - removal of the unused `bind9` server
@@ -110,7 +110,7 @@ The playbook does not remove packages that were installed manually.
 - Android SDK, emulator, Java, browsers, or Maestro
 - Docker
 - application services, repositories, user data, torrents, or backups
-- Pi authentication, mutable state, sessions, extensions, skills, prompts, packages, or themes
+- Pi authentication, mutable state, sessions, extensions, prompts, packages, or themes
 - gh and Vercel authentication
 
 Add these only after the server needs them.
