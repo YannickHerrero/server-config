@@ -1,0 +1,9 @@
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Verified public Tailscale signing-key checksum"
+regexTarget = "secret"
+regexes = [
+  '''^3e03dacf222698c60b8e2f990b809ca1b3e104de127767864284e6c228f1fb39$''',
+]
