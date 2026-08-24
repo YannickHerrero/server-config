@@ -46,6 +46,7 @@ server_config_swap_size_mb: 8192
 server_config_packages:
   - ansible-core
   - ansible-lint
+  - build-essential
   - ca-certificates
   - curl
   - git

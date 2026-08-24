@@ -33,7 +33,7 @@ return {
     config = function()
       local installation = require("nvim-treesitter").install(parsers)
       if vim.env.SERVER_CONFIG_NVIM_BOOTSTRAP == "1" then
-        installation:wait(300000)
+        assert(installation:wait(300000), "Treesitter parser installation failed")
       end
 
       vim.treesitter.language.register("json", "jsonc")
