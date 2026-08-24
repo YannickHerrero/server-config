@@ -9,7 +9,7 @@ version_check = false
 manifest_check = false
 
 [terminal]
-default_shell = "/usr/bin/zsh"
+default_shell = "/bin/zsh"
 shell_mode = "login"
 
 [keys]
