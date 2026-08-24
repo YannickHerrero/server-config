@@ -201,6 +201,7 @@
       - git
       - config
       - --global
+      - --includes
       - --get-regexp
       - '^user\.(name|email)$'
   environment:

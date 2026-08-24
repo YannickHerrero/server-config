@@ -208,8 +208,8 @@ for command_name in rustc cargo gh vercel nvim; do
 done
 
 section "Developer identity"
-if git config --global --get user.name >/dev/null 2>&1 \
-    && git config --global --get user.email >/dev/null 2>&1; then
+if git config --global --includes --get user.name >/dev/null 2>&1 \
+    && git config --global --includes --get user.email >/dev/null 2>&1; then
     pass "Git name and email are configured"
 else
     warn "Git identity is missing; run ./bin/onboard"

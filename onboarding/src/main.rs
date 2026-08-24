@@ -568,7 +568,7 @@ fn git_config_value(file: Option<&Path>, key: &str) -> Option<String> {
     if let Some(file) = file {
         command.arg("--file").arg(file);
     } else {
-        command.arg("--global");
+        command.args(["--global", "--includes"]);
     }
     let output = command.arg("--get").arg(key).output().ok()?;
     if !output.status.success() {
