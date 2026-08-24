@@ -1,0 +1,33 @@
+---
+server_config_supported_distribution: Ubuntu
+server_config_supported_version: "24.04"
+server_config_supported_architecture: x86_64
+server_config_timezone: Etc/UTC
+
+server_config_swap_enabled: true
+server_config_swap_path: /swapfile
+server_config_swap_size_mb: 8192
+
+server_config_packages:
+  - ansible-core
+  - ansible-lint
+  - ca-certificates
+  - curl
+  - git
+  - jq
+  - less
+  - lsof
+  - mdadm
+  - python3
+  - python3-apt
+  - ripgrep
+  - rsync
+  - shellcheck
+  - smartmontools
+  - sudo
+  - tmux
+  - unattended-upgrades
+  - unzip
+  - xz-utils
+  - yamllint
+  - zip

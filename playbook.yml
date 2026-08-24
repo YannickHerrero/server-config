@@ -1,0 +1,223 @@
+---
+- name: Converge the Ubuntu server base
+  hosts: all
+  gather_facts: true
+
+  pre_tasks:
+    - name: Require the supported Ubuntu release
+      ansible.builtin.assert:
+        that:
+          - ansible_distribution == server_config_supported_distribution
+          - ansible_distribution_version == server_config_supported_version
+          - ansible_architecture == server_config_supported_architecture
+        fail_msg: >-
+          This playbook requires {{ server_config_supported_distribution }}
+          {{ server_config_supported_version }} on {{ server_config_supported_architecture }}.
+      tags:
+        - always
+
+    - name: Refuse a root login session
+      ansible.builtin.assert:
+        that:
+          - ansible_user_id != "root"
+        fail_msg: Run the playbook as the target user and let Ansible use sudo.
+      tags:
+        - always
+
+  tasks:
+    - name: Refresh the APT package index
+      become: true
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+      tags:
+        - packages
+
+    - name: Install base administration packages
+      become: true
+      ansible.builtin.apt:
+        name: "{{ server_config_packages }}"
+        state: present
+      tags:
+        - packages
+
+    - name: Set the timezone file
+      become: true
+      ansible.builtin.copy:
+        content: "{{ server_config_timezone }}\n"
+        dest: /etc/timezone
+        owner: root
+        group: root
+        mode: "0644"
+      tags:
+        - time
+
+    - name: Link the system timezone
+      become: true
+      ansible.builtin.file:
+        src: "/usr/share/zoneinfo/{{ server_config_timezone }}"
+        dest: /etc/localtime
+        owner: root
+        group: root
+        state: link
+        force: true
+      tags:
+        - time
+
+    - name: Configure periodic APT jobs
+      become: true
+      ansible.builtin.template:
+        src: 20auto-upgrades.j2
+        dest: /etc/apt/apt.conf.d/20auto-upgrades
+        owner: root
+        group: root
+        mode: "0644"
+      tags:
+        - updates
+
+    - name: Disable unattended automatic reboots
+      become: true
+      ansible.builtin.template:
+        src: 52server-config-unattended-upgrades.j2
+        dest: /etc/apt/apt.conf.d/52server-config-unattended-upgrades
+        owner: root
+        group: root
+        mode: "0644"
+      tags:
+        - updates
+
+    - name: Enable maintenance timers
+      become: true
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        enabled: true
+        state: started
+      loop:
+        - apt-daily.timer
+        - apt-daily-upgrade.timer
+        - fstrim.timer
+      tags:
+        - storage
+        - updates
+
+    - name: Inspect the swap file
+      when: server_config_swap_enabled
+      ansible.builtin.stat:
+        path: "{{ server_config_swap_path }}"
+      register: server_config_swap_stat
+      tags:
+        - swap
+
+    - name: Refuse to replace an unexpected swap file
+      when:
+        - server_config_swap_enabled
+        - server_config_swap_stat.stat.exists
+      ansible.builtin.assert:
+        that:
+          - server_config_swap_stat.stat.isreg
+          - server_config_swap_stat.stat.size == server_config_swap_size_mb * 1024 * 1024
+        fail_msg: >-
+          {{ server_config_swap_path }} exists with an unexpected type or size.
+          Inspect it before changing the managed swap configuration.
+      tags:
+        - swap
+
+    - name: Allocate the swap file
+      become: true
+      when:
+        - server_config_swap_enabled
+        - not server_config_swap_stat.stat.exists
+      ansible.builtin.command:
+        argv:
+          - fallocate
+          - -l
+          - "{{ server_config_swap_size_mb }}M"
+          - "{{ server_config_swap_path }}"
+        creates: "{{ server_config_swap_path }}"
+      tags:
+        - swap
+
+    - name: Restrict swap file permissions
+      become: true
+      when:
+        - server_config_swap_enabled
+        - server_config_swap_stat.stat.exists or not ansible_check_mode
+      ansible.builtin.file:
+        path: "{{ server_config_swap_path }}"
+        owner: root
+        group: root
+        mode: "0600"
+        state: file
+      tags:
+        - swap
+
+    - name: Inspect the swap file format
+      become: true
+      when: server_config_swap_enabled
+      ansible.builtin.command:
+        argv:
+          - blkid
+          - -o
+          - value
+          - -s
+          - TYPE
+          - "{{ server_config_swap_path }}"
+      register: server_config_swap_type
+      changed_when: false
+      failed_when: false
+      check_mode: false
+      tags:
+        - swap
+
+    - name: Format the swap file
+      become: true
+      when:
+        - server_config_swap_enabled
+        - server_config_swap_type.stdout != "swap"
+      ansible.builtin.command:
+        argv:
+          - mkswap
+          - "{{ server_config_swap_path }}"
+      changed_when: true
+      tags:
+        - swap
+
+    - name: Persist the swap file
+      become: true
+      when: server_config_swap_enabled
+      ansible.builtin.lineinfile:
+        path: /etc/fstab
+        regexp: "^{{ server_config_swap_path | regex_escape }}\\s"
+        line: "{{ server_config_swap_path }} none swap sw 0 0"
+        owner: root
+        group: root
+        mode: "0644"
+        state: present
+      tags:
+        - swap
+
+    - name: Read active swap devices
+      when: server_config_swap_enabled
+      ansible.builtin.command:
+        argv:
+          - swapon
+          - --show=NAME
+          - --noheadings
+      register: server_config_active_swap
+      changed_when: false
+      check_mode: false
+      tags:
+        - swap
+
+    - name: Activate the swap file
+      become: true
+      when:
+        - server_config_swap_enabled
+        - server_config_swap_path not in server_config_active_swap.stdout_lines
+      ansible.builtin.command:
+        argv:
+          - swapon
+          - "{{ server_config_swap_path }}"
+      changed_when: true
+      tags:
+        - swap

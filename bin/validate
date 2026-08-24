@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+ROOT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+cd "$ROOT_DIR"
+
+missing=()
+for command_name in ansible-lint ansible-playbook shellcheck yamllint; do
+    command -v "$command_name" >/dev/null 2>&1 || missing+=("$command_name")
+done
+if (( ${#missing[@]} > 0 )); then
+    printf 'error: missing validation commands: %s\n' "${missing[*]}" >&2
+    printf 'on Ubuntu, run: sudo apt-get install ansible-core ansible-lint shellcheck yamllint\n' >&2
+    exit 1
+fi
+
+shellcheck install.sh bin/apply bin/check bin/doctor bin/validate
+yamllint .ansible-lint .yamllint group_vars/all.yml inventory/localhost.yml playbook.yml
+ansible-playbook --syntax-check playbook.yml
+ansible-lint playbook.yml
+
+git diff --check
+printf 'Validation passed.\n'

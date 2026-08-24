@@ -1,0 +1,130 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+failures=0
+
+section() {
+    printf '\n== %s ==\n' "$1"
+}
+
+pass() {
+    printf '[ok] %s\n' "$1"
+}
+
+warn() {
+    printf '[warn] %s\n' "$1"
+}
+
+fail() {
+    printf '[fail] %s\n' "$1" >&2
+    failures=$((failures + 1))
+}
+
+[[ $(uname -s) == Linux ]] || {
+    printf 'error: doctor runs on the managed Linux host\n' >&2
+    exit 1
+}
+
+section "System"
+# shellcheck source=/dev/null
+. /etc/os-release
+printf 'OS: %s %s\n' "${NAME:-unknown}" "${VERSION_ID:-unknown}"
+printf 'Kernel: %s\n' "$(uname -r)"
+printf 'Architecture: %s\n' "$(uname -m)"
+printf 'Hostname: %s\n' "$(hostname)"
+if [[ ${ID:-} == ubuntu && ${VERSION_ID:-} == 24.04 ]]; then
+    pass "supported Ubuntu release"
+else
+    fail "expected Ubuntu 24.04"
+fi
+if [[ $(uname -m) == x86_64 ]]; then
+    pass "supported architecture"
+else
+    fail "expected x86_64"
+fi
+
+section "CPU and KVM"
+awk -F: '/model name/ {sub(/^[ \t]+/, "", $2); print "CPU: " $2; exit}' /proc/cpuinfo
+printf 'Logical CPUs: %s\n' "$(getconf _NPROCESSORS_ONLN)"
+if grep -Eq '^flags.*\b(vmx|svm)\b' /proc/cpuinfo; then
+    pass "hardware virtualization flag present"
+else
+    fail "hardware virtualization flag missing"
+fi
+if [[ -e /dev/kvm ]]; then
+    if [[ -r /dev/kvm && -w /dev/kvm ]]; then
+        pass "/dev/kvm is usable by this user"
+    else
+        warn "/dev/kvm exists but this user cannot use it yet"
+    fi
+else
+    warn "/dev/kvm is not available yet"
+fi
+
+section "RAID and filesystems"
+cat /proc/mdstat
+if grep -Eq '\[[U_]*_[U_]*\]' /proc/mdstat; then
+    fail "a software RAID member is missing"
+else
+    pass "no degraded software RAID marker found"
+fi
+for mount_point in /boot /; do
+    findmnt -no SOURCE,FSTYPE,SIZE,USED,AVAIL,TARGET "$mount_point" 2>/dev/null || fail "$mount_point is not mounted"
+done
+if sudo -n true 2>/dev/null; then
+    sudo -n mdadm --detail --scan || true
+else
+    warn "run sudo -v before doctor for mdadm and SMART details"
+fi
+
+df -h / /boot
+
+section "Memory and swap"
+free -h
+if swapon --show=NAME --noheadings | grep -Fxq /swapfile; then
+    pass "/swapfile is active"
+else
+    fail "/swapfile is not active"
+fi
+
+section "Timers and updates"
+for unit in fstrim.timer apt-daily.timer apt-daily-upgrade.timer; do
+    if systemctl is-enabled --quiet "$unit" && systemctl is-active --quiet "$unit"; then
+        pass "$unit is enabled and active"
+    else
+        fail "$unit is not enabled and active"
+    fi
+done
+if [[ -e /var/run/reboot-required ]]; then
+    warn "a reboot is required"
+else
+    pass "no reboot is currently required"
+fi
+
+section "Disks"
+lsblk -o NAME,TYPE,SIZE,FSTYPE,MOUNTPOINTS
+if sudo -n true 2>/dev/null; then
+    while read -r disk; do
+        [[ -n $disk ]] || continue
+        if sudo -n smartctl -H "/dev/$disk" 2>/dev/null | grep -Eq 'PASSED|OK'; then
+            pass "SMART health passed for /dev/$disk"
+        else
+            warn "SMART health was unavailable or did not pass for /dev/$disk"
+        fi
+    done < <(lsblk -dn -o NAME,TYPE | awk '$2 == "disk" {print $1}')
+fi
+
+section "Network"
+ip -brief address
+ip route show default
+if getent hosts github.com >/dev/null; then
+    pass "DNS resolution works"
+else
+    fail "DNS resolution failed"
+fi
+
+if (( failures > 0 )); then
+    printf '\nDoctor found %d failure(s).\n' "$failures" >&2
+    exit 1
+fi
+printf '\nDoctor found no base-system failures.\n'
