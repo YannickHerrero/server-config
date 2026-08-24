@@ -84,6 +84,7 @@ To inspect a remote host from a trusted control machine, create the ignored file
 ## Managed in version 1
 
 - a small package set for administration and diagnostics
+- shared libraries and fonts for project-scoped Playwright Chromium headless tests
 - daily Ubuntu security updates without automatic reboot
 - an 8 GiB swap file
 - weekly SSD TRIM
@@ -102,6 +103,8 @@ To inspect a remote host from a trusted control machine, create the ignored file
 - read-only checks for the OS, RAID, storage, private access, network, KVM, shell, user tools, Pi, and Herdr
 
 The playbook does not remove packages that were installed manually.
+
+Browser tests use the Chromium headless shell pinned by each project's Playwright dependency. The server configuration supplies its shared libraries and basic web fonts, but does not install a system browser, desktop environment, display server, GTK, or Xvfb.
 
 ## Not managed yet
 

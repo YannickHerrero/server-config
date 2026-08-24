@@ -41,6 +41,15 @@
       tags:
         - packages
 
+    - name: Install headless browser runtime packages
+      become: true
+      ansible.builtin.apt:
+        name: "{{ server_config_headless_browser_packages }}"
+        state: present
+      tags:
+        - headless-browser
+        - packages
+
     - name: Set the timezone file
       become: true
       ansible.builtin.copy:
