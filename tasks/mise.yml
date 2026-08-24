@@ -158,6 +158,7 @@
     - runtimes
 
 - name: Verify all mise tools are installed
+  when: not ansible_check_mode or server_config_mise_missing.rc == 0
   ansible.builtin.command:
     argv:
       - "{{ ansible_user_dir }}/.local/bin/mise"
@@ -175,6 +176,7 @@
     - runtimes
 
 - name: Verify the Treesitter CLI
+  when: not ansible_check_mode or server_config_mise_missing.rc == 0
   ansible.builtin.command:
     argv:
       - "{{ ansible_user_dir }}/.local/bin/mise"
