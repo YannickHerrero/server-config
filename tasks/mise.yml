@@ -110,6 +110,39 @@
     - mise
     - runtimes
 
+- name: Inspect the obsolete npm Treesitter CLI installation
+  ansible.builtin.stat:
+    path: >-
+      {{
+        ansible_user_dir
+        ~ '/.local/share/mise/installs/npm-tree-sitter-cli/'
+        ~ server_config_tree_sitter_version
+      }}
+  register: server_config_obsolete_npm_tree_sitter
+  tags:
+    - mise
+    - runtimes
+    - neovim
+
+- name: Remove the obsolete npm Treesitter CLI installation
+  when:
+    - server_config_obsolete_npm_tree_sitter.stat.exists
+    - not ansible_check_mode
+  ansible.builtin.command:
+    argv:
+      - "{{ ansible_user_dir }}/.local/bin/mise"
+      - uninstall
+      - --yes
+      - "npm:tree-sitter-cli@{{ server_config_tree_sitter_version }}"
+  environment:
+    HOME: "{{ ansible_user_dir }}"
+    PATH: "{{ ansible_user_dir }}/.local/bin:/usr/bin:/bin"
+  changed_when: true
+  tags:
+    - mise
+    - runtimes
+    - neovim
+
 - name: Reshim mise tools
   when: not ansible_check_mode
   ansible.builtin.command:
@@ -140,6 +173,29 @@
   tags:
     - mise
     - runtimes
+
+- name: Verify the Treesitter CLI
+  ansible.builtin.command:
+    argv:
+      - "{{ ansible_user_dir }}/.local/bin/mise"
+      - exec
+      - --
+      - tree-sitter
+      - --version
+  environment:
+    HOME: "{{ ansible_user_dir }}"
+    PATH: "{{ ansible_user_dir }}/.local/bin:/usr/bin:/bin"
+  register: server_config_tree_sitter_cli
+  changed_when: false
+  failed_when: >-
+    server_config_tree_sitter_cli.rc != 0
+    or server_config_tree_sitter_cli.stdout
+    != 'tree-sitter ' + server_config_tree_sitter_version
+  check_mode: false
+  tags:
+    - mise
+    - runtimes
+    - neovim
 
 - name: Read installed Rust components
   ansible.builtin.command:
