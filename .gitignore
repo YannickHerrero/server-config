@@ -12,6 +12,7 @@ secrets/
 
 # Local development tools
 .venv/
+onboarding/target/
 
 # Test and diagnostic output
 artifacts/
