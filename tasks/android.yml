@@ -429,27 +429,45 @@
     - android
     - multica
 
-- name: Verify the Android SDK package set
+- name: Inspect the installed Android SDK package set
   become: true
   become_user: root
   when:
     - server_config_multica_enabled
     - server_config_android_enabled
     - not ansible_check_mode
-  ansible.builtin.command:
-    argv:
-      - "{{ server_config_android_sdk_root }}/cmdline-tools/latest/bin/sdkmanager"
-      - "--sdk_root={{ server_config_android_sdk_root }}"
-      - --list_installed
-  environment:
-    JAVA_HOME: /usr/lib/jvm/java-21-openjdk-amd64
-  register: server_config_android_installed_packages
-  changed_when: false
-  failed_when: >-
-    server_config_android_packages
-    | reject('in', server_config_android_installed_packages.stdout)
-    | list
-    | length > 0
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - >-
+      {{ server_config_android_sdk_root }}/build-tools/{{
+        server_config_android_build_tools_version
+      }}/aapt2
+    - "{{ server_config_android_sdk_root }}/emulator/emulator"
+    - "{{ server_config_android_sdk_root }}/platform-tools/adb"
+    - >-
+      {{ server_config_android_sdk_root }}/platforms/android-{{
+        server_config_android_api_level
+      }}/android.jar
+    - >-
+      {{ server_config_android_sdk_root }}/system-images/android-{{
+        server_config_android_api_level
+      }}/google_apis/x86_64/package.xml
+  register: server_config_android_installed_package_paths
+  tags:
+    - android
+    - multica
+
+- name: Verify the Android SDK package set
+  when:
+    - server_config_multica_enabled
+    - server_config_android_enabled
+    - not ansible_check_mode
+  ansible.builtin.assert:
+    that:
+      - server_config_android_installed_package_paths.results | map(attribute='stat.exists') | min
+    fail_msg: The pinned Android SDK package set is incomplete.
+    quiet: true
   tags:
     - android
     - multica
