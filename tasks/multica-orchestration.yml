@@ -48,8 +48,10 @@
     group: root
     mode: "0755"
   loop:
+    - multica-heavy-run
     - multica-project-config
     - multica-project-sync
+    - multica-run
   tags:
     - multica
 

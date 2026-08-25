@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+state_dir=${MULTICA_PROCESS_STATE:-"$HOME/.local/state/multica/processes"}
+mkdir -p -- "$state_dir"
+chmod 0700 -- "$state_dir"
+
+if [[ ${1:-} == -- ]]; then
+    shift
+fi
+if (( $# == 0 )); then
+    printf 'usage: multica-heavy-run -- command [args...]\n' >&2
+    exit 2
+fi
+
+exec /usr/bin/flock --exclusive "$state_dir/heavy.lock" "$@"
