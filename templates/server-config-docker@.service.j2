@@ -6,6 +6,7 @@ Wants=network-online.target
 
 [Service]
 Type=notify
+NotifyAccess=all
 User=%i
 Environment=HOME=/home/%i
 Environment=XDG_RUNTIME_DIR={{ server_config_docker_runtime_dir }}/%i
