@@ -37,6 +37,22 @@ python3 -m py_compile \
     tests/test_maintenance_window.py \
     tests/test_multica_project.py
 python3 -W error -m unittest discover -s tests -p 'test_*.py'
+python3 - <<'PY'
+from pathlib import Path
+import subprocess
+
+from jinja2 import Environment, StrictUndefined
+
+template = Environment(undefined=StrictUndefined).from_string(
+    Path("templates/multica-android-emulator.j2").read_text()
+)
+rendered = template.render(
+    server_config_android_sdk_root="/opt/android-sdk",
+    server_config_android_avd_name="multica-api-35",
+)
+subprocess.run(["bash", "-n", "-"], input=rendered, text=True, check=True)
+subprocess.run(["shellcheck", "--shell=bash", "-"], input=rendered, text=True, check=True)
+PY
 ./tests/check-maintenance-window.sh
 python3 -c 'import tomllib; tomllib.load(open("config/herdr/config.toml", "rb")); tomllib.load(open("config/mise/config.toml", "rb")); tomllib.load(open("config/multica/mise.toml", "rb")); tomllib.load(open("config/nvim/stylua.toml", "rb")); tomllib.load(open("config/ohmyposh/zen.toml", "rb")); tomllib.load(open("onboarding/Cargo.toml", "rb"))'
 test -s onboarding/Cargo.lock

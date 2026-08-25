@@ -3,6 +3,7 @@ set -Eeuo pipefail
 
 sdk='{{ server_config_android_sdk_root }}'
 avd='{{ server_config_android_avd_name }}'
+{% raw %}
 state_dir=${MULTICA_PROCESS_STATE:-"$HOME/.local/state/multica/processes"}
 export ANDROID_HOME="$sdk"
 export ANDROID_SDK_ROOT="$sdk"
@@ -71,3 +72,4 @@ case "${1:-}" in
         exit 2
         ;;
 esac
+{% endraw %}
