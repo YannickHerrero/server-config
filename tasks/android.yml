@@ -237,7 +237,6 @@
   when:
     - server_config_multica_enabled
     - server_config_android_enabled
-    - not ansible_check_mode or server_config_multica_account.rc == 0
   ansible.builtin.stat:
     path: >-
       {{ server_config_multica_home }}/.android/avd/{{ server_config_android_avd_name }}.avd/config.ini
@@ -284,9 +283,7 @@
     - server_config_multica_enabled
     - server_config_android_enabled
     - ansible_check_mode
-    - >-
-      server_config_multica_account.rc != 0
-      or not server_config_android_avd.stat.exists
+    - not server_config_android_avd.stat.exists
   ansible.builtin.debug:
     msg: "Create the {{ server_config_android_avd_name }} headless AVD"
   changed_when: true
@@ -300,7 +297,6 @@
   when:
     - server_config_multica_enabled
     - server_config_android_enabled
-    - not ansible_check_mode or server_config_multica_account.rc == 0
     - not ansible_check_mode or server_config_android_avd.stat.exists
   ansible.builtin.blockinfile:
     path: >-

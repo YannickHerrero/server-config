@@ -90,10 +90,9 @@ server_config_multica_git_url: https://github.com/multica-ai/multica.git
 server_config_multica_cli_url: >-
   https://github.com/multica-ai/multica/releases/download/v0.4.34/multica-cli-0.4.34-linux-amd64.tar.gz
 server_config_multica_cli_sha256: 14f8f463cdf2b2adbad5cc7cbe3902a03cecf605f2f52b8f148cc0dc502e98db
-server_config_multica_user: multica
-server_config_multica_home: /home/multica
-server_config_multica_subid_start: 165536
-server_config_multica_subid_count: 65536
+server_config_multica_user: "{{ ansible_user_id }}"
+server_config_multica_home: "{{ ansible_user_dir }}"
+server_config_multica_legacy_user: multica
 server_config_multica_port: 8444
 server_config_multica_proxy_port: 4180
 server_config_multica_backend_port: 4181
@@ -102,10 +101,9 @@ server_config_multica_timezone: Europe/Paris
 server_config_multica_daemon_max_tasks: 3
 server_config_multica_repo_dir: "{{ ansible_user_dir }}/.local/share/multica/server"
 server_config_multica_env_file: "{{ ansible_user_dir }}/.config/multica/server.env"
-server_config_multica_agent_workspaces: /home/multica/workspaces
-server_config_multica_project_map: /home/multica/.local/state/multica/project-map.json
-server_config_multica_mise_config: /home/multica/.config/mise/config.toml
-server_config_multica_pi_dir: /home/multica/.pi/multica
+server_config_multica_agent_workspaces: "{{ ansible_user_dir }}/.local/share/multica/workspaces"
+server_config_multica_project_map: "{{ ansible_user_dir }}/.local/state/multica/project-map.json"
+server_config_multica_pi_dir: "{{ ansible_user_dir }}/.pi/multica"
 
 server_config_android_enabled: true
 server_config_android_sdk_root: /opt/android-sdk

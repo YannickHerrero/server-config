@@ -1,6 +1,8 @@
 # Multica operations
 
-This host runs the Multica service and its Pi runtime as separate trust domains. The web stack uses Yannick's rootless Docker daemon. Agent tasks run as the unprivileged `multica` account with their own rootless Docker daemon, GitHub login, Pi login, home, and workspaces.
+This host runs the Multica service and its Pi agents as `yannick`. The server, agents, and ordinary development commands share Yannick's rootless Docker daemon, GitHub login, repositories, and Unix permissions. The agents therefore have the same access to local credentials, LXD, and maintenance windows as other processes owned by `yannick`.
+
+Pi configuration remains separate under `~/.pi/multica`. The agent runtime does not load Yannick's global `AGENTS.md`, personal skills, extensions, prompts, or themes.
 
 Raw Multica ports bind to loopback. Citadel publishes the single-origin proxy on Tailscale HTTPS port `8444`. Do not add a public listener or enable Funnel.
 
@@ -10,19 +12,19 @@ Raw Multica ports bind to loopback. Citadel publishes the single-origin proxy on
 | --- | --- |
 | Pinned server checkout | `~/.local/share/multica/server` |
 | Private server environment | `~/.config/multica/server.env` |
-| Agent CLI profile | `/home/multica/.multica/config.json` |
-| Isolated Pi profile | `/home/multica/.pi/multica` |
-| Task workspaces | `/home/multica/workspaces` |
-| Repo-to-project map | `/home/multica/.local/state/multica/project-map.json` |
+| Agent CLI profile | `~/.multica/config.json` |
+| Agent Pi profile | `~/.pi/multica` |
+| Task workspaces | `~/.local/share/multica/workspaces` |
+| Repo-to-project map | `~/.local/state/multica/project-map.json` |
 | Local project memory | `~/dev/<repo>/.multica/project.yaml` |
-| Process and port locks | `/home/multica/.local/state/multica/processes` |
+| Process and port locks | `~/.local/state/multica/processes` |
 | Android SDK | `/opt/android-sdk` |
 
-The global Git exclude file ignores `.multica/` for Yannick and the agent account. The files remain untracked, but `git add -f` can still override an ignore rule. Winter checks every PR for that mistake.
+The global Git exclude file ignores `.multica/`. The files remain untracked, but `git add -f` can still override an ignore rule. Winter checks every PR for that mistake.
 
 ## First activation
 
-Application needs explicit approval because it creates a Unix account, grants an ACL on `~/dev`, installs host packages, and starts rootless Docker services. Apply only a committed `server-config` checkout:
+Application needs explicit approval because it installs host packages, adds Yannick to the KVM group, and starts rootless Docker. It also removes any retired `multica` account and ACLs left by an earlier installation. Apply only a committed `server-config` checkout:
 
 ```bash
 ./bin/check
@@ -67,31 +69,21 @@ multica-server verification-code
 
 The backend prints the code because no email provider is configured. Do not paste it into an issue or an agent task.
 
-## Isolated interactive logins
+## Agent Pi profile
 
-Open a shell as the dedicated account. This does not copy Yannick's credentials:
-
-```bash
-sudo -u multica -H /bin/bash
-export PATH="$HOME/.local/share/mise/shims:$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin"
-export PI_CODING_AGENT_DIR="$HOME/.pi/multica"
-```
-
-Authenticate GitHub over HTTPS and verify that Git can use the credential helper:
+The agents reuse Yannick's GitHub CLI identity:
 
 ```bash
-gh auth login --git-protocol https
-gh auth setup-git
 gh auth status
-git config --global user.name "Yannick Herrero"
-git config --global user.email "<the verified GitHub email>"
+git config --global user.name
+git config --global user.email
 ```
 
-Launch Pi, run `/login`, complete OAuth, then exit Pi. Confirm that the isolated file exists with mode `0600`:
+They use a separate Pi configuration. Launch that profile, run `/login`, complete OAuth, then exit Pi. Confirm that its authentication file uses mode `0600`:
 
 ```bash
-pi
-stat -c '%a %n' "$PI_CODING_AGENT_DIR/auth.json"
+PI_CODING_AGENT_DIR="$HOME/.pi/multica" pi
+stat -c '%a %n' "$HOME/.pi/multica/auth.json"
 ```
 
 Configure the private Multica origin and authenticate the CLI:
@@ -101,28 +93,23 @@ origin="https://$(tailscale status --json | jq -r '.Self.DNSName | rtrimstr(".")
 multica config set server_url "$origin"
 multica config set app_url "$origin"
 multica login
-exit
 ```
 
 Start the system-managed daemon and confirm the Pi runtime is online:
 
 ```bash
 sudo systemctl start multica-daemon.service
-sudo -u multica -H env \
-  PATH=/home/multica/.local/share/mise/shims:/home/multica/.local/bin:/usr/local/bin:/usr/bin:/bin \
-  multica daemon status
+multica daemon status
 ```
 
-The service refuses to start before `/home/multica/.multica/config.json` exists. It has a global concurrency limit of three tasks and cannot update its own CLI.
+The service refuses to start before `~/.multica/config.json` exists. It has a global concurrency limit of three tasks and cannot update its own CLI.
 
 ## Workspace, agents, and projects
 
 After the runtime is online, provision the Dev workspace and agents:
 
 ```bash
-sudo -u multica -H env \
-  PATH=/home/multica/.local/share/mise/shims:/home/multica/.local/bin:/usr/local/bin:/usr/bin:/bin \
-  multica-bootstrap
+multica-bootstrap
 ```
 
 The command is idempotent. It creates or updates:
@@ -132,7 +119,7 @@ The command is idempotent. It creates or updates:
 - Giselle, Winter, and Ningning with concurrency `1`;
 - Pi arguments `--approve`, `--no-extensions`, `--no-prompt-templates`, and `--no-themes`.
 
-It deliberately keeps context files and skills enabled. Multica needs both for its runtime brief and built-in workflow skills.
+It keeps context files and Multica's runtime skills enabled. The separate `~/.pi/multica` directory has no link to the personal skills or three-stage workflow under `~/.pi/agent`.
 
 Project synchronization runs at 08:00 and 20:00 `Europe/Paris`:
 
@@ -207,7 +194,6 @@ Useful diagnostics:
 multica-server ps
 multica-server logs backend
 sudo journalctl -u multica-daemon.service
-sudo journalctl -u server-config-docker@multica.service
 sudo journalctl -u server-config-docker@yannick.service
 ./bin/doctor
 ```

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create or update the Dev workspace and its four isolated Pi agents."""
+"""Create or update the Dev workspace and its four Pi agents."""
 
 from __future__ import annotations
 
@@ -122,13 +122,13 @@ def select_runtime(runtimes: Any, requested: str = "") -> dict[str, Any]:
             for runtime in runtimes
             if runtime.get("provider") == "pi" and runtime.get("status") == "online"
         ]
-        preferred = [runtime for runtime in matches if runtime.get("name") == "Pi isolated"]
+        preferred = [runtime for runtime in matches if runtime.get("name") == "Pi agents"]
         if len(preferred) == 1:
             matches = preferred
     if len(matches) != 1:
         ids = ", ".join(str(runtime.get("id", "?")) for runtime in matches) or "none"
         raise ProjectError(
-            f"expected one online isolated Pi runtime, found {len(matches)} ({ids}); pass --runtime-id"
+            f"expected one online Pi agent runtime, found {len(matches)} ({ids}); pass --runtime-id"
         )
     return matches[0]
 

@@ -39,17 +39,29 @@ bootstrap = load_script("multica-bootstrap", "multica_bootstrap")
 
 
 class MulticaBootstrapTests(unittest.TestCase):
-    def test_runtime_selection_prefers_the_named_isolated_pi_runtime(self) -> None:
+    def test_runtime_selection_prefers_the_named_pi_agent_runtime(self) -> None:
         runtimes = [
             {"id": "other", "provider": "pi", "status": "online", "name": "Pi"},
             {
-                "id": "isolated",
+                "id": "agents",
                 "provider": "pi",
                 "status": "online",
-                "name": "Pi isolated",
+                "name": "Pi agents",
             },
         ]
-        self.assertEqual(bootstrap.select_runtime(runtimes)["id"], "isolated")
+        self.assertEqual(bootstrap.select_runtime(runtimes)["id"], "agents")
+
+    def test_agents_share_the_managed_user_but_not_its_pi_configuration(self) -> None:
+        variables = (ROOT / "group_vars/all.yml").read_text()
+        runtime_tasks = (ROOT / "tasks/multica-runtime.yml").read_text()
+        daemon = (ROOT / "templates/multica-daemon.service.j2").read_text()
+        settings = json.loads((ROOT / "config/multica/pi-settings.json").read_text())
+
+        self.assertIn('server_config_multica_user: "{{ ansible_user_id }}"', variables)
+        self.assertIn('server_config_multica_pi_dir: "{{ ansible_user_dir }}/.pi/multica"', variables)
+        self.assertIn("PI_CODING_AGENT_DIR={{ server_config_multica_pi_dir }}", daemon)
+        self.assertNotIn("permissions: rwX", runtime_tasks)
+        self.assertEqual(settings, {"defaultThinkingLevel": "high", "quietStartup": True})
 
     def test_runtime_selection_refuses_an_ambiguous_machine(self) -> None:
         runtimes = [

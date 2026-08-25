@@ -137,7 +137,7 @@ To inspect a remote host from a trusted control machine, create the ignored file
 - pinned rootless Docker Engine, Compose, and Buildx without a rootful socket
 - a path-bound AppArmor user-namespace profile for the pinned rootlesskit binary
 - a private Multica self-host stack on Tailscale HTTPS port `8444`
-- an isolated `multica` account with dedicated Pi, GitHub, Docker, and project state
+- Multica agents running as the managed user with a separate Pi configuration
 - twice-daily Multica project synchronization in `Europe/Paris`
 - pinned Java and Android SDK tools with a KVM-backed headless API 35 AVD
 - daily Ubuntu security updates without automatic reboot

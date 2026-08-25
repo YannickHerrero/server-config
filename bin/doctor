@@ -334,14 +334,12 @@ if [[ $EXPECTED_MULTICA_ENABLED == true ]]; then
     else
         fail "Docker is not installed at $docker_binary"
     fi
-    for docker_user in "$USER" multica; do
-        unit="server-config-docker@$docker_user.service"
-        if systemctl is-enabled --quiet "$unit" && systemctl is-active --quiet "$unit"; then
-            pass "$unit is enabled and active"
-        else
-            fail "$unit is not enabled and active"
-        fi
-    done
+    docker_unit="server-config-docker@$USER.service"
+    if systemctl is-enabled --quiet "$docker_unit" && systemctl is-active --quiet "$docker_unit"; then
+        pass "$docker_unit is enabled and active"
+    else
+        fail "$docker_unit is not enabled and active"
+    fi
     if [[ -x $docker_binary ]] \
         && docker_security=$(DOCKER_HOST="$managed_docker_socket" $docker_binary info --format '{{json .SecurityOptions}}' 2>/dev/null) \
         && [[ $docker_security == *name=rootless* ]]; then
@@ -368,24 +366,26 @@ if [[ $EXPECTED_MULTICA_ENABLED == true ]]; then
     else
         fail "Multica is not installed at $multica_binary"
     fi
-    if multica_groups=$(id -nG multica 2>/dev/null); then
-        if grep -Eq '(^| )kvm( |$)' <<<"$multica_groups"; then
-            pass "the Multica account can use KVM"
-        else
-            fail "the Multica account is not in the kvm group"
-        fi
-        if grep -Eq '(^| )(sudo|docker|lxd)( |$)' <<<"$multica_groups"; then
-            fail "the Multica account has a privileged group"
-        else
-            pass "the Multica account has no sudo, docker, or lxd group"
-        fi
+    if getent passwd multica >/dev/null; then
+        fail "the retired dedicated Multica account still exists"
     else
-        fail "the dedicated Multica account is missing"
+        pass "the retired dedicated Multica account is absent"
     fi
-    if [[ -d /home/multica && $(stat -c '%a' /home/multica) == 750 ]]; then
-        pass "the Multica home is private"
+    if systemctl is-enabled --quiet server-config-docker@multica.service 2>/dev/null; then
+        fail "the retired Multica Docker service is still enabled"
     else
-        fail "the Multica home is missing or does not use mode 0750"
+        pass "the retired Multica Docker service is disabled"
+    fi
+    if grep -Eq '^multica:' /etc/subuid /etc/subgid; then
+        fail "retired Multica subordinate IDs still exist"
+    else
+        pass "retired Multica subordinate IDs are absent"
+    fi
+    managed_groups=$(id -nG "$USER")
+    if grep -Eq '(^| )kvm( |$)' <<<"$managed_groups"; then
+        pass "the managed user can use KVM"
+    else
+        fail "the managed user is not in the kvm group"
     fi
     if systemctl is-enabled --quiet multica-project-sync.timer \
         && systemctl is-active --quiet multica-project-sync.timer; then
@@ -401,7 +401,7 @@ if [[ $EXPECTED_MULTICA_ENABLED == true ]]; then
         fail "the managed user's global Git ignore does not exclude .multica"
     fi
 
-    multica_profile=/home/multica/.multica/config.json
+    multica_profile="$HOME/.multica/config.json"
     if [[ -f $multica_profile ]]; then
         if [[ $(stat -c '%a' "$multica_profile") == 600 ]]; then
             pass "the Multica profile permissions are 0600"
@@ -420,18 +420,16 @@ if [[ $EXPECTED_MULTICA_ENABLED == true ]]; then
         else
             fail "the authenticated Multica private server is not ready"
         fi
-        if [[ -f /home/multica/.pi/multica/auth.json \
-            && $(stat -c '%a' /home/multica/.pi/multica/auth.json) == 600 ]]; then
-            pass "the isolated Pi profile is authenticated with mode 0600"
+        multica_pi_auth="$HOME/.pi/multica/auth.json"
+        if [[ -f $multica_pi_auth && $(stat -c '%a' "$multica_pi_auth") == 600 ]]; then
+            pass "the isolated Multica Pi profile is authenticated with mode 0600"
         else
-            fail "the isolated Pi profile is not authenticated with mode 0600"
+            fail "the isolated Multica Pi profile is not authenticated with mode 0600"
         fi
-        if HOME=/home/multica /usr/sbin/runuser -u multica -- /usr/bin/env \
-            HOME=/home/multica PATH=/home/multica/.local/share/mise/shims:/home/multica/.local/bin:/usr/local/bin:/usr/bin:/bin \
-            gh auth status >/dev/null 2>&1; then
-            pass "the isolated GitHub CLI profile is authenticated"
+        if gh auth status >/dev/null 2>&1; then
+            pass "the managed user's GitHub CLI profile is authenticated"
         else
-            fail "the isolated GitHub CLI profile is not authenticated"
+            fail "the managed user's GitHub CLI profile is not authenticated"
         fi
     else
         warn "Multica is provisioned but not authenticated; follow docs/multica.md"
@@ -461,7 +459,7 @@ if [[ $EXPECTED_ANDROID_ENABLED == true ]]; then
     else
         fail "Java 21 is not active"
     fi
-    android_avd=/home/multica/.android/avd/multica-api-35.avd/config.ini
+    android_avd="$HOME/.android/avd/multica-api-35.avd/config.ini"
     if [[ -f $android_avd ]]; then
         pass "the headless Android AVD is configured"
     else

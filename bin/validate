@@ -66,7 +66,7 @@ with tempfile.NamedTemporaryFile(mode="w") as file:
     )
 PY
 ./tests/check-maintenance-window.sh
-python3 -c 'import tomllib; tomllib.load(open("config/herdr/config.toml", "rb")); tomllib.load(open("config/mise/config.toml", "rb")); tomllib.load(open("config/multica/mise.toml", "rb")); tomllib.load(open("config/nvim/stylua.toml", "rb")); tomllib.load(open("config/ohmyposh/zen.toml", "rb")); tomllib.load(open("onboarding/Cargo.toml", "rb"))'
+python3 -c 'import tomllib; tomllib.load(open("config/herdr/config.toml", "rb")); tomllib.load(open("config/mise/config.toml", "rb")); tomllib.load(open("config/nvim/stylua.toml", "rb")); tomllib.load(open("config/ohmyposh/zen.toml", "rb")); tomllib.load(open("onboarding/Cargo.toml", "rb"))'
 test -s onboarding/Cargo.lock
 if command -v cargo >/dev/null 2>&1; then
     cargo fmt --manifest-path onboarding/Cargo.toml --check
