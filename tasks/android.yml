@@ -316,12 +316,20 @@
       not ansible_check_mode
       or (server_config_android_package_paths.results | map(attribute='stat.exists') | min)
   ansible.builtin.file:
-    path: "{{ server_config_android_sdk_root }}"
+    path: "{{ item }}"
     owner: root
     group: root
     mode: "u=rwX,go=rX"
     recurse: true
     state: directory
+  loop:
+    - "{{ server_config_android_sdk_root }}/.sdk"
+    - "{{ server_config_android_sdk_root }}/build-tools"
+    - "{{ server_config_android_sdk_root }}/emulator"
+    - "{{ server_config_android_sdk_root }}/licenses"
+    - "{{ server_config_android_sdk_root }}/platforms"
+    - "{{ server_config_android_sdk_root }}/platform-tools"
+    - "{{ server_config_android_sdk_root }}/system-images"
   tags:
     - android
     - multica
