@@ -122,6 +122,8 @@
   register: server_config_citadel_health
   retries: 15
   delay: 1
-  until: server_config_citadel_health.json.status == 'ok'
+  until: >-
+    (server_config_citadel_health.status | default(0)) == 200
+    and (server_config_citadel_health.json | default({})).get('status', '') == 'ok'
   tags:
     - citadel
