@@ -13,7 +13,7 @@ Regles non negociables:
 
 - Ne committe jamais `.multica/`, meme avec `git add -f`. Verifie la liste des fichiers stages et celle de la PR.
 - Ne stocke aucun secret, token, session ou credential dans Git, Multica, un commentaire ou `project.yaml`.
-- N'emploie pas `pkill`, `killall` ni un kill par motif. Lance les serveurs avec `multica-run run -- <commande>`, consulte-les avec `multica-run list` et arrete uniquement leur `run_id` avec `multica-run stop <run_id>`.
+- N'emploie pas `pkill`, `killall` ni un kill par motif. Lance les commandes courtes avec `multica-run run -- <commande>` et les serveurs avec `multica-run start -- <commande>`. Consulte-les avec `multica-run list` et arrete uniquement leur `run_id` avec `multica-run stop <run_id>`.
 - Lance Gradle, l'emulateur Android, Chromium et les builds Docker avec `multica-heavy-run -- <commande>`.
 - N'utilise que les ports fournis par `MULTICA_PORT`, `MULTICA_PORT_BASE` et `MULTICA_PORT_END`.
 - Detecte la branche par defaut. Ne suppose jamais qu'elle s'appelle `main`.

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from collections import deque
 import datetime as dt
 import fcntl
 import json
@@ -146,11 +147,13 @@ def normalize_command(command: Sequence[str]) -> list[str]:
     return values
 
 
-def run_owned(command: Sequence[str]) -> int:
+def run_owned(command: Sequence[str], requested_run_id: str = "") -> int:
     prepare_state()
     argv = normalize_command(command)
     start, port_lock = allocate_port_block()
-    run_id = f"{int(time.time())}-{secrets.token_hex(4)}"
+    run_id = requested_run_id or f"{int(time.time())}-{secrets.token_hex(4)}"
+    if not SAFE_ID.fullmatch(run_id):
+        raise RunError("invalid run id")
     state_path = STATE_DIR / f"{run_id}.json"
     environment = os.environ.copy()
     environment.update(
@@ -178,6 +181,7 @@ def run_owned(command: Sequence[str]) -> int:
             "command": Path(argv[0]).name,
             "pgid": child.pid,
             "pid": child.pid,
+            "log": os.environ.get("MULTICA_RUN_LOG", ""),
             "ports": [start, start + PORT_BLOCK_SIZE - 1],
             "run_id": run_id,
             "start_time": process_start_time(child.pid),
@@ -196,6 +200,53 @@ def run_owned(command: Sequence[str]) -> int:
         signal.signal(signal.SIGINT, previous_int)
         state_path.unlink(missing_ok=True)
         os.close(port_lock)
+
+
+def start_owned(command: Sequence[str]) -> int:
+    prepare_state()
+    argv = normalize_command(command)
+    run_id = f"{int(time.time())}-{secrets.token_hex(4)}"
+    log_directory = STATE_DIR / "logs"
+    log_directory.mkdir(mode=0o700, exist_ok=True)
+    os.chmod(log_directory, 0o700)
+    log_path = log_directory / f"{run_id}.log"
+    environment = os.environ.copy()
+    environment["MULTICA_RUN_LOG"] = str(log_path)
+    with log_path.open("ab", buffering=0) as log:
+        supervisor = subprocess.Popen(
+            [
+                sys.executable,
+                str(Path(__file__).resolve()),
+                "_supervise",
+                run_id,
+                "--",
+                *argv,
+            ],
+            env=environment,
+            stdin=subprocess.DEVNULL,
+            stdout=log,
+            stderr=log,
+            start_new_session=True,
+        )
+    path = state_path(run_id)
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        if path.exists():
+            state = load_state(path)
+            ports = state["ports"]
+            print(f"started {run_id}: pid {state['pid']}, ports {ports[0]}-{ports[1]}")
+            print(f"log: {log_path}")
+            return 0
+        if supervisor.poll() is not None:
+            break
+        time.sleep(0.05)
+    tail = ""
+    try:
+        tail = "\n".join(log_path.read_text(encoding="utf-8", errors="replace").splitlines()[-10:])
+    except OSError:
+        pass
+    detail = f"\n{tail}" if tail else ""
+    raise RunError(f"managed process failed to start: {run_id}{detail}")
 
 
 def state_path(run_id: str) -> Path:
@@ -233,6 +284,25 @@ def list_owned(as_json: bool) -> int:
     return 0
 
 
+def show_logs(run_id: str, follow: bool) -> int:
+    prepare_state()
+    path = state_path(run_id)
+    log_path = STATE_DIR / "logs" / f"{run_id}.log"
+    if path.exists():
+        state = load_state(path)
+        configured = state.get("log")
+        if isinstance(configured, str) and configured:
+            log_path = Path(configured)
+    if not log_path.is_file():
+        raise RunError(f"no log exists for run: {run_id}")
+    if follow:
+        os.execl("/usr/bin/tail", "tail", "-n", "100", "-F", str(log_path))
+    with log_path.open(encoding="utf-8", errors="replace") as handle:
+        for line in deque(handle, maxlen=100):
+            print(line, end="")
+    return 0
+
+
 def stop_owned(run_id: str) -> int:
     prepare_state()
     path = state_path(run_id)
@@ -264,8 +334,16 @@ def parser() -> argparse.ArgumentParser:
     subcommands = arguments.add_subparsers(dest="operation", required=True)
     run_parser = subcommands.add_parser("run")
     run_parser.add_argument("command", nargs=argparse.REMAINDER)
+    start_parser = subcommands.add_parser("start")
+    start_parser.add_argument("command", nargs=argparse.REMAINDER)
+    supervise_parser = subcommands.add_parser("_supervise", help=argparse.SUPPRESS)
+    supervise_parser.add_argument("run_id")
+    supervise_parser.add_argument("command", nargs=argparse.REMAINDER)
     list_parser = subcommands.add_parser("list")
     list_parser.add_argument("--json", action="store_true")
+    logs_parser = subcommands.add_parser("logs")
+    logs_parser.add_argument("run_id")
+    logs_parser.add_argument("--follow", "-f", action="store_true")
     stop_parser = subcommands.add_parser("stop")
     stop_parser.add_argument("run_id")
     return arguments
@@ -276,8 +354,14 @@ def main() -> int:
     try:
         if arguments.operation == "run":
             return run_owned(arguments.command)
+        if arguments.operation == "start":
+            return start_owned(arguments.command)
+        if arguments.operation == "_supervise":
+            return run_owned(arguments.command, arguments.run_id)
         if arguments.operation == "list":
             return list_owned(arguments.json)
+        if arguments.operation == "logs":
+            return show_logs(arguments.run_id, arguments.follow)
         return stop_owned(arguments.run_id)
     except (OSError, RunError) as error:
         print(f"error: {error}", file=sys.stderr)

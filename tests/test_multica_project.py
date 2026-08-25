@@ -178,6 +178,50 @@ class MulticaProcessTests(unittest.TestCase):
                 first.terminate()
                 first.wait(timeout=10)
 
+    def test_detached_start_returns_and_remains_stoppable(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary) / "state"
+            environment = self.process_environment(state, 45300)
+            started = subprocess.run(
+                [
+                    sys.executable,
+                    str(FILES / "multica-run"),
+                    "start",
+                    "--",
+                    sys.executable,
+                    "-c",
+                    "import time; print('ready', flush=True); time.sleep(30)",
+                ],
+                env=environment,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            self.assertEqual(started.returncode, 0, started.stderr)
+            state_path = self.wait_for_state(state)
+            run_id = json.loads(state_path.read_text())["run_id"]
+            time.sleep(0.2)
+            logs = subprocess.run(
+                [sys.executable, str(FILES / "multica-run"), "logs", run_id],
+                env=environment,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            self.assertEqual(logs.returncode, 0, logs.stderr)
+            self.assertIn("ready", logs.stdout)
+            stopped = subprocess.run(
+                [sys.executable, str(FILES / "multica-run"), "stop", run_id],
+                env=environment,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            self.assertEqual(stopped.returncode, 0, stopped.stderr)
+
     def test_stop_targets_a_registered_process_group(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             state = Path(temporary) / "state"
