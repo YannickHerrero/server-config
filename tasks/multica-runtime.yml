@@ -388,7 +388,7 @@
   ansible.builtin.systemd_service:
     name: "server-config-docker@{{ ansible_user_id }}.service"
     enabled: true
-    state: started
+    state: "{{ 'restarted' if server_config_docker_unit.changed else 'started' }}"
   tags:
     - docker
     - multica
