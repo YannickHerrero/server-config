@@ -23,7 +23,7 @@
     path: >-
       {{ server_config_android_sdk_root }}/cmdline-tools/{{
         server_config_android_commandline_tools_version
-      }}/cmdline-tools/bin/sdkmanager
+      }}/bin/sdkmanager
   register: server_config_android_commandline_tools
   tags:
     - android
@@ -90,9 +90,63 @@
     creates: >-
       {{ server_config_android_sdk_root }}/cmdline-tools/{{
         server_config_android_commandline_tools_version
-      }}/cmdline-tools/bin/sdkmanager
+      }}/bin/sdkmanager
     owner: root
     group: root
+  tags:
+    - android
+    - multica
+
+- name: Flatten the versioned Android command-line tools directory
+  become: true
+  become_user: root
+  when:
+    - server_config_multica_enabled
+    - server_config_android_enabled
+    - not ansible_check_mode
+    - not server_config_android_commandline_tools.stat.exists
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/mv
+      - >-
+        {{ server_config_android_sdk_root }}/cmdline-tools/{{
+          server_config_android_commandline_tools_version
+        }}/cmdline-tools/bin
+      - >-
+        {{ server_config_android_sdk_root }}/cmdline-tools/{{
+          server_config_android_commandline_tools_version
+        }}/cmdline-tools/lib
+      - >-
+        {{ server_config_android_sdk_root }}/cmdline-tools/{{
+          server_config_android_commandline_tools_version
+        }}/cmdline-tools/NOTICE.txt
+      - >-
+        {{ server_config_android_sdk_root }}/cmdline-tools/{{
+          server_config_android_commandline_tools_version
+        }}/cmdline-tools/source.properties
+      - >-
+        {{ server_config_android_sdk_root }}/cmdline-tools/{{
+          server_config_android_commandline_tools_version
+        }}/
+  changed_when: true
+  tags:
+    - android
+    - multica
+
+- name: Remove the nested Android command-line tools directory
+  become: true
+  become_user: root
+  when:
+    - server_config_multica_enabled
+    - server_config_android_enabled
+    - not ansible_check_mode
+    - not server_config_android_commandline_tools.stat.exists
+  ansible.builtin.file:
+    path: >-
+      {{ server_config_android_sdk_root }}/cmdline-tools/{{
+        server_config_android_commandline_tools_version
+      }}/cmdline-tools
+    state: absent
   tags:
     - android
     - multica
@@ -108,7 +162,7 @@
     path: >-
       {{ server_config_android_sdk_root }}/cmdline-tools/{{
         server_config_android_commandline_tools_version
-      }}/cmdline-tools
+      }}
     owner: root
     group: root
     mode: "u=rwX,go=rX"
@@ -129,7 +183,7 @@
     src: >-
       {{ server_config_android_sdk_root }}/cmdline-tools/{{
         server_config_android_commandline_tools_version
-      }}/cmdline-tools
+      }}
     dest: "{{ server_config_android_sdk_root }}/cmdline-tools/latest"
     owner: root
     group: root
