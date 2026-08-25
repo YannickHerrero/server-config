@@ -46,6 +46,8 @@ Before changing a system package, global CLI, runtime, user configuration, file 
 8. Run `./bin/doctor`; the broker enforces this during a maintenance window.
 9. Commit the change atomically before requesting brokered convergence.
 
+When asking the user to run Ansible, `./bin/check`, or `./bin/apply`, offer in the same message to handle the work through a maintenance window. State whether a normal or sensitive window is required. If a suitable window is already active, use `server-config-window converge` yourself instead of asking the user to run those commands.
+
 A maintenance window is standing application approval only until its displayed deadline. Never open or extend one on the user's behalf. Confirm its scope with `server-config-window status`. A normal window blocks access, firewall, SSH, Tailscale, sudo, user-account, Citadel, and maintenance-window tasks. The user must open a sensitive window to authorize host-access categories. Citadel and maintenance-window changes always use the ordinary interactive apply path. A window does not authorize pushing or releasing commits.
 
 Do not make persistent changes directly with `apt install`, global npm installs, `mise use -g`, installer pipes, edits under `/etc`, or edits to managed files in `$HOME`.
