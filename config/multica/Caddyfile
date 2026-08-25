@@ -1,23 +1,23 @@
 :4180 {
-    handle /health {
-        reverse_proxy backend:8080
-    }
+	handle /health {
+		reverse_proxy backend:8080
+	}
 
-    handle /readyz {
-        reverse_proxy backend:8080
-    }
+	handle /readyz {
+		reverse_proxy backend:8080
+	}
 
-    @browser_websocket path /ws /ws/*
-    handle @browser_websocket {
-        reverse_proxy backend:8080
-    }
+	@browser_websocket path /ws /ws/*
+	handle @browser_websocket {
+		reverse_proxy backend:8080
+	}
 
-    @daemon_websocket path /api/daemon/ws /api/daemon/ws/*
-    handle @daemon_websocket {
-        reverse_proxy backend:8080
-    }
+	@daemon_websocket path /api/daemon/ws /api/daemon/ws/*
+	handle @daemon_websocket {
+		reverse_proxy backend:8080
+	}
 
-    handle {
-        reverse_proxy frontend:3000
-    }
+	handle {
+		reverse_proxy frontend:3000
+	}
 }
