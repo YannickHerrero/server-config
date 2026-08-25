@@ -82,6 +82,16 @@
     - multica
     - users
 
+- name: Inspect the pinned Multica CLI
+  become: true
+  become_user: root
+  when: server_config_multica_enabled
+  ansible.builtin.stat:
+    path: "/opt/server-config/multica/{{ server_config_multica_version }}/multica"
+  register: server_config_multica_cli_installed
+  tags:
+    - multica
+
 - name: Create the pinned Multica CLI directories
   become: true
   become_user: root
@@ -105,7 +115,9 @@
 - name: Download the pinned Multica CLI
   become: true
   become_user: root
-  when: server_config_multica_enabled
+  when:
+    - server_config_multica_enabled
+    - not ansible_check_mode or server_config_multica_cli_installed.stat.exists
   ansible.builtin.get_url:
     url: "{{ server_config_multica_cli_url }}"
     dest: "/var/cache/server-config/multica-cli-{{ server_config_multica_version }}.tar.gz"
@@ -119,7 +131,9 @@
 - name: Extract the pinned Multica CLI
   become: true
   become_user: root
-  when: server_config_multica_enabled
+  when:
+    - server_config_multica_enabled
+    - not ansible_check_mode or server_config_multica_cli_installed.stat.exists
   ansible.builtin.unarchive:
     src: "/var/cache/server-config/multica-cli-{{ server_config_multica_version }}.tar.gz"
     dest: "/opt/server-config/multica/{{ server_config_multica_version }}"
@@ -133,13 +147,26 @@
 - name: Select the pinned Multica CLI
   become: true
   become_user: root
-  when: server_config_multica_enabled
+  when:
+    - server_config_multica_enabled
+    - not ansible_check_mode or server_config_multica_cli_installed.stat.exists
   ansible.builtin.file:
     src: "/opt/server-config/multica/{{ server_config_multica_version }}/multica"
     dest: /usr/local/bin/multica
     owner: root
     group: root
     state: link
+  tags:
+    - multica
+
+- name: Report the planned pinned Multica CLI installation
+  when:
+    - server_config_multica_enabled
+    - ansible_check_mode
+    - not server_config_multica_cli_installed.stat.exists
+  ansible.builtin.debug:
+    msg: "Install Multica CLI {{ server_config_multica_version }}"
+  changed_when: true
   tags:
     - multica
 
