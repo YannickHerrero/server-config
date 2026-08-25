@@ -1,0 +1,10 @@
+# Allow the pinned rootlesskit binary to create its user namespace on Ubuntu.
+
+abi <abi/4.0>,
+include <tunables/global>
+
+profile server-config-rootlesskit {{ server_config_docker_install_dir }}/rootlesskit flags=(unconfined) {
+  userns,
+
+  include if exists <local/server-config-rootlesskit>
+}

@@ -191,6 +191,34 @@
     - docker
     - multica
 
+- name: Install the AppArmor profile for pinned rootlesskit
+  become: true
+  become_user: root
+  ansible.builtin.template:
+    src: server-config-rootlesskit.apparmor.j2
+    dest: /etc/apparmor.d/server-config-rootlesskit
+    owner: root
+    group: root
+    mode: "0644"
+  register: server_config_rootlesskit_apparmor_profile
+  tags:
+    - docker
+    - multica
+
+- name: Load the AppArmor profile for pinned rootlesskit
+  become: true
+  become_user: root
+  when: not ansible_check_mode
+  ansible.builtin.command:
+    argv:
+      - /usr/sbin/apparmor_parser
+      - --replace
+      - /etc/apparmor.d/server-config-rootlesskit
+  changed_when: server_config_rootlesskit_apparmor_profile.changed
+  tags:
+    - docker
+    - multica
+
 - name: Block an accidental rootful Docker service
   become: true
   become_user: root

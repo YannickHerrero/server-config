@@ -74,6 +74,7 @@ server_config_docker_install_dir: "/opt/server-config/docker/{{ server_config_do
 server_config_docker_runtime_dir: /run/server-config-docker
 server_config_docker_packages:
   - acl
+  - apparmor
   - dbus-user-session
   - fuse-overlayfs
   - iptables

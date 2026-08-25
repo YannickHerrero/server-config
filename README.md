@@ -135,6 +135,7 @@ To inspect a remote host from a trusted control machine, create the ignored file
 - a small package set for administration and diagnostics
 - shared libraries and fonts for project-scoped Playwright Chromium headless tests
 - pinned rootless Docker Engine, Compose, and Buildx without a rootful socket
+- a path-bound AppArmor user-namespace profile for the pinned rootlesskit binary
 - a private Multica self-host stack on Tailscale HTTPS port `8444`
 - an isolated `multica` account with dedicated Pi, GitHub, Docker, and project state
 - twice-daily Multica project synchronization in `Europe/Paris`
