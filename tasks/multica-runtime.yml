@@ -94,6 +94,49 @@
     - multica
     - users
 
+- name: Terminate processes owned by the retired Multica account
+  become: true
+  become_user: root
+  when:
+    - server_config_multica_enabled
+    - server_config_multica_legacy_account.rc == 0
+    - not ansible_check_mode
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/pkill
+      - --signal
+      - TERM
+      - --uid
+      - "{{ server_config_multica_legacy_user }}"
+  register: server_config_multica_legacy_processes_terminated
+  changed_when: server_config_multica_legacy_processes_terminated.rc == 0
+  failed_when: server_config_multica_legacy_processes_terminated.rc not in [0, 1]
+  tags:
+    - multica
+    - users
+
+- name: Wait for retired Multica processes to exit
+  become: true
+  become_user: root
+  when:
+    - server_config_multica_enabled
+    - server_config_multica_legacy_account.rc == 0
+    - not ansible_check_mode
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/pgrep
+      - --uid
+      - "{{ server_config_multica_legacy_user }}"
+  register: server_config_multica_legacy_processes
+  changed_when: false
+  failed_when: server_config_multica_legacy_processes.rc not in [0, 1]
+  retries: 10
+  delay: 1
+  until: server_config_multica_legacy_processes.rc == 1
+  tags:
+    - multica
+    - users
+
 - name: Remove the retired Multica account
   become: true
   become_user: root
