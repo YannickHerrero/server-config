@@ -443,6 +443,35 @@
     - multica
     - users
 
+- name: Inspect project-local private configuration
+  when: server_config_multica_enabled
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - "{{ ansible_user_dir }}/dev/server-config/config/git/identity.local"
+    - "{{ ansible_user_dir }}/dev/citadel/config/citadel.local.json"
+  register: server_config_multica_private_project_config
+  tags:
+    - multica
+    - users
+
+- name: Preserve private modes after granting project ACLs
+  when:
+    - server_config_multica_enabled
+    - item.stat.exists
+  ansible.builtin.file:
+    path: "{{ item.item }}"
+    owner: "{{ ansible_user_id }}"
+    group: "{{ ansible_user_gid }}"
+    mode: "0600"
+    state: file
+  loop: "{{ server_config_multica_private_project_config.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  tags:
+    - multica
+    - users
+
 - name: Inspect the rootless Docker systemd template
   become: true
   become_user: root
