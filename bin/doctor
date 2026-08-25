@@ -8,6 +8,8 @@ EXPECTED_PI_VERSION=$(awk -F'"' '/^server_config_pi_version:/ {print $2}' "$ROOT
 EXPECTED_HERDR_VERSION=$(awk -F'"' '/^server_config_herdr_version:/ {print $2}' "$ROOT_DIR/group_vars/all.yml")
 EXPECTED_ONBOARDING_VERSION=$(awk -F'"' '/^server_config_onboarding_version:/ {print $2}' "$ROOT_DIR/group_vars/all.yml")
 EXPECTED_SWAP_PATH=$(awk '/^server_config_swap_path:/ {print $2}' "$ROOT_DIR/group_vars/all.yml")
+EXPECTED_CITADEL_ENABLED=$(awk '/^server_config_citadel_enabled:/ {print $2}' "$ROOT_DIR/group_vars/all.yml")
+EXPECTED_CITADEL_PORT=$(awk '/^server_config_citadel_port:/ {print $2}' "$ROOT_DIR/group_vars/all.yml")
 failures=0
 
 section() {
@@ -294,6 +296,33 @@ if [[ -e $pi_auth_file ]]; then
     fi
 else
     warn "Pi is not authenticated yet; run pi and then /login"
+fi
+
+if [[ $EXPECTED_CITADEL_ENABLED == true ]]; then
+    section "Citadel"
+    citadel_unit="citadel@$USER.service"
+    if systemctl is-enabled --quiet "$citadel_unit" && systemctl is-active --quiet "$citadel_unit"; then
+        pass "$citadel_unit is enabled and active"
+    else
+        fail "$citadel_unit is not enabled and active"
+    fi
+    if systemctl is-enabled --quiet supervisor.service 2>/dev/null; then
+        fail "the distribution Supervisor service is enabled"
+    else
+        pass "the distribution Supervisor service is disabled"
+    fi
+    if systemctl is-active --quiet supervisor.service; then
+        fail "the distribution Supervisor service is active"
+    else
+        pass "the distribution Supervisor service is stopped"
+    fi
+    if citadel_health=$(curl --fail --silent --show-error \
+        "http://127.0.0.1:$EXPECTED_CITADEL_PORT/api/health" 2>/dev/null) \
+        && jq -e '.status == "ok"' <<<"$citadel_health" >/dev/null; then
+        pass "Citadel localhost health check passed"
+    else
+        fail "Citadel localhost health check failed"
+    fi
 fi
 
 section "Disks"

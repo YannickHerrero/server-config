@@ -45,6 +45,13 @@ server_config_swap_enabled: true
 server_config_swap_path: /swap.img
 server_config_swap_size_mb: 8192
 
+server_config_citadel_enabled: true
+server_config_citadel_repo_dir: "{{ ansible_user_dir }}/dev/citadel"
+server_config_citadel_port: 9860
+server_config_citadel_supervisor_config: "{{ ansible_user_dir }}/.local/state/citadel/supervisord.conf"
+server_config_citadel_packages:
+  - supervisor
+
 server_config_packages:
   - ansible-core
   - ansible-lint

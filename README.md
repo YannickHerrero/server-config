@@ -99,12 +99,15 @@ To inspect a remote host from a trusted control machine, create the ignored file
 - tracked global `AGENTS.md`, portable Pi skills, and stable Pi settings merged without touching authentication
 - tracked Herdr configuration with `Ctrl+A`, `|` vertical split, and `-` horizontal split
 - tracked Neovim configuration and plugin lockfile without tmux integration or a forced color theme
+- the Supervisor package and Citadel controller bootstrap
 - removal of the unused `bind9` server
-- read-only checks for the OS, RAID, storage, private access, network, KVM, shell, user tools, Pi, and Herdr
+- read-only checks for the OS, RAID, storage, private access, network, KVM, shell, user tools, Pi, Herdr, and Citadel
 
 The playbook does not remove packages that were installed manually.
 
 Browser tests use the Chromium headless shell pinned by each project's Playwright dependency. The server configuration supplies its shared libraries and basic web fonts, but does not install a system browser, desktop environment, display server, GTK, or Xvfb.
+
+The playbook installs Supervisor, disables its distribution-wide daemon, and starts the private Citadel controller. Citadel owns application definitions, lifecycle, logs, health checks, and Tailscale Serve routes. Application repositories and Citadel runtime data remain outside `server-config`.
 
 ## Not managed yet
 
@@ -112,7 +115,7 @@ Browser tests use the Chromium headless shell pinned by each project's Playwrigh
 - tailnet policy, Tailscale authentication, key expiry, or sudo policy
 - Android SDK, emulator, Java, browsers, or Maestro
 - Docker
-- application services, repositories, user data, torrents, or backups
+- application repositories, Citadel's service catalog or routes, user data, torrents, or backups
 - Pi authentication, mutable state, sessions, extensions, prompts, packages, or themes
 - gh and Vercel authentication
 

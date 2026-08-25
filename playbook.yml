@@ -626,6 +626,11 @@
         - access
         - firewall
 
+    - name: Configure the Citadel controller
+      ansible.builtin.import_tasks: tasks/citadel.yml
+      tags:
+        - citadel
+
   handlers:
     - name: Reload OpenSSH
       become: true

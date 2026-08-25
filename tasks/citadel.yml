@@ -1,0 +1,127 @@
+---
+- name: Install Citadel controller packages
+  become: true
+  when: server_config_citadel_enabled
+  ansible.builtin.apt:
+    name: "{{ server_config_citadel_packages }}"
+    state: present
+  tags:
+    - citadel
+
+- name: Inspect the Citadel controller inputs
+  when: server_config_citadel_enabled
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - "{{ server_config_citadel_repo_dir }}/package.json"
+    - "{{ server_config_citadel_repo_dir }}/dist/index.html"
+    - "{{ server_config_citadel_repo_dir }}/config/citadel.local.json"
+    - "{{ server_config_citadel_supervisor_config }}"
+  register: server_config_citadel_inputs
+  tags:
+    - citadel
+
+- name: Require a prepared Citadel controller
+  when: server_config_citadel_enabled
+  ansible.builtin.assert:
+    that:
+      - server_config_citadel_inputs.results | map(attribute='stat.exists') | min
+      - server_config_citadel_inputs.results[2].stat.mode == '0600'
+      - server_config_citadel_inputs.results[3].stat.mode == '0600'
+    fail_msg: >-
+      Build Citadel, create private config/citadel.local.json, and run pnpm ops:render
+      before applying server-config.
+    quiet: true
+  tags:
+    - citadel
+
+- name: Inspect the distribution Supervisor service
+  when: server_config_citadel_enabled
+  ansible.builtin.stat:
+    path: /usr/lib/systemd/system/supervisor.service
+  register: server_config_supervisor_unit
+  tags:
+    - citadel
+
+- name: Report the planned distribution Supervisor shutdown
+  when:
+    - server_config_citadel_enabled
+    - ansible_check_mode
+    - not server_config_supervisor_unit.stat.exists
+  ansible.builtin.debug:
+    msg: Disable the distribution-wide Supervisor daemon after package installation
+  changed_when: true
+  tags:
+    - citadel
+
+- name: Disable the distribution Supervisor daemon
+  become: true
+  when:
+    - server_config_citadel_enabled
+    - not ansible_check_mode or server_config_supervisor_unit.stat.exists
+  ansible.builtin.systemd_service:
+    name: supervisor.service
+    enabled: false
+    masked: true
+    state: stopped
+  tags:
+    - citadel
+
+- name: Inspect the installed Citadel systemd template
+  when: server_config_citadel_enabled
+  ansible.builtin.stat:
+    path: /etc/systemd/system/citadel@.service
+  register: server_config_citadel_unit
+  tags:
+    - citadel
+
+- name: Install the Citadel systemd template
+  become: true
+  when: server_config_citadel_enabled
+  ansible.builtin.template:
+    src: citadel@.service.j2
+    dest: /etc/systemd/system/citadel@.service
+    owner: root
+    group: root
+    mode: "0644"
+  tags:
+    - citadel
+
+- name: Report the planned Citadel activation
+  when:
+    - server_config_citadel_enabled
+    - ansible_check_mode
+    - not server_config_citadel_unit.stat.exists
+  ansible.builtin.debug:
+    msg: "Enable and start citadel@{{ ansible_user_id }}.service"
+  changed_when: true
+  tags:
+    - citadel
+
+- name: Enable and start Citadel
+  become: true
+  when:
+    - server_config_citadel_enabled
+    - not ansible_check_mode or server_config_citadel_unit.stat.exists
+  ansible.builtin.systemd_service:
+    name: "citadel@{{ ansible_user_id }}.service"
+    daemon_reload: true
+    enabled: true
+    state: started
+  tags:
+    - citadel
+
+- name: Wait for Citadel health
+  when:
+    - server_config_citadel_enabled
+    - not ansible_check_mode
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ server_config_citadel_port }}/api/health"
+    return_content: true
+    status_code: 200
+  register: server_config_citadel_health
+  retries: 15
+  delay: 1
+  until: server_config_citadel_health.json.status == 'ok'
+  tags:
+    - citadel
