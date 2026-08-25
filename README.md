@@ -74,6 +74,22 @@ server-config-window status # Inspect an active maintenance window
 
 `converge` asks for sudo once, shows the dry-run diff, waits for explicit approval, applies twice, and fails unless the second application reports `changed=0 failed=0`. Its latest logs are stored with private permissions in `~/.local/state/server-config/logs`.
 
+## Remote Mosh sessions
+
+Install Tailscale and a Mosh-capable terminal on the phone or tablet, then connect the device to the same tailnet. With MagicDNS enabled, use the short hostname:
+
+```bash
+mosh yannick@normandy
+```
+
+The Tailscale IPv4 address also works. Replace the example address rather than typing it literally:
+
+```bash
+mosh yannick@100.x.y.z
+```
+
+Mosh authenticates through the existing private SSH service, then uses UDP ports `60000:61000` on `tailscale0`. UFW does not expose those ports on the server's public network interface.
+
 ## Maintenance windows
 
 A maintenance window lets the agent converge several committed `server-config` changes after one interactive authorization. Open one for 30 minutes:
@@ -123,6 +139,7 @@ To inspect a remote host from a trusted control machine, create the ignored file
 - pinned mise, Node.js, Bun, pnpm, Rust, Pi, Herdr, gh, Vercel, Neovim, LSP, formatter, and terminal CLI versions
 - Tailscale installation with interactive authentication
 - UFW with public traffic denied and SSH allowed only through Tailscale
+- Mosh sessions through Tailscale only
 - password-based OpenSSH for the managed user, with root login disabled
 - portable Zsh configuration with pinned plugins and a transparent prompt
 - optional local Git identity without publishing personal metadata

@@ -8,6 +8,7 @@ EXPECTED_PI_VERSION=$(awk -F'"' '/^server_config_pi_version:/ {print $2}' "$ROOT
 EXPECTED_HERDR_VERSION=$(awk -F'"' '/^server_config_herdr_version:/ {print $2}' "$ROOT_DIR/group_vars/all.yml")
 EXPECTED_ONBOARDING_VERSION=$(awk -F'"' '/^server_config_onboarding_version:/ {print $2}' "$ROOT_DIR/group_vars/all.yml")
 EXPECTED_SWAP_PATH=$(awk '/^server_config_swap_path:/ {print $2}' "$ROOT_DIR/group_vars/all.yml")
+EXPECTED_MOSH_PORT_RANGE=$(awk -F'"' '/^server_config_mosh_port_range:/ {print $2}' "$ROOT_DIR/group_vars/all.yml")
 EXPECTED_CITADEL_ENABLED=$(awk '/^server_config_citadel_enabled:/ {print $2}' "$ROOT_DIR/group_vars/all.yml")
 EXPECTED_CITADEL_PORT=$(awk '/^server_config_citadel_port:/ {print $2}' "$ROOT_DIR/group_vars/all.yml")
 EXPECTED_MAINTENANCE_WINDOW_MAX=$(awk '/^server_config_maintenance_window_max_minutes:/ {print $2}' "$ROOT_DIR/group_vars/all.yml")
@@ -133,6 +134,12 @@ if tailscale debug prefs 2>/dev/null | jq -e '.RunSSH == false' >/dev/null; then
 else
     fail "Tailscale SSH is enabled or its state is unavailable"
 fi
+if dpkg-query -W -f='${db:Status-Status}' mosh 2>/dev/null | grep -qx installed \
+    && command -v mosh-server >/dev/null 2>&1; then
+    pass "Mosh is installed"
+else
+    fail "Mosh is not installed"
+fi
 if dpkg-query -W -f='${db:Status-Status}' bind9 2>/dev/null | grep -qx installed; then
     fail "the unused bind9 server is installed"
 else
@@ -154,6 +161,11 @@ if sudo -n true 2>/dev/null; then
         pass "SSH is allowed on tailscale0"
     else
         fail "SSH is not allowed on tailscale0"
+    fi
+    if grep -Fq "$EXPECTED_MOSH_PORT_RANGE/udp on tailscale0" <<<"$ufw_status"; then
+        pass "Mosh is allowed on tailscale0"
+    else
+        fail "Mosh is not allowed on tailscale0"
     fi
     if grep -q '1022/tcp' <<<"$ufw_status"; then
         fail "the temporary release-upgrade SSH rule is still present"

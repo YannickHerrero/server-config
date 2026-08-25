@@ -43,6 +43,7 @@ server_config_tailscale_repository: >-
   deb [signed-by=/usr/share/keyrings/tailscale-archive-keyring.gpg]
   https://pkgs.tailscale.com/stable/ubuntu noble main
 server_config_tailscale_port: 41641
+server_config_mosh_port_range: "60000:61000"
 
 server_config_swap_enabled: true
 server_config_swap_path: /swap.img
