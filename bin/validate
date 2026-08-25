@@ -19,9 +19,17 @@ zsh -n config/zsh/zshenv config/zsh/.zshrc config/zsh/*.zsh
 python3 -m json.tool config/pi/settings.desired.json >/dev/null
 python3 -m json.tool config/nvim/lazy-lock.json >/dev/null
 test -x files/server-config-window
+test -x files/multica-project-config
+test -x files/multica-project-sync
 test -x tests/check-maintenance-window.sh
-python3 -m py_compile files/server-config-window tests/test_maintenance_window.py
-python3 -W error -m unittest tests/test_maintenance_window.py
+python3 -m py_compile \
+    files/server-config-window \
+    files/multica-project-config \
+    files/multica-project-sync \
+    files/multica_project.py \
+    tests/test_maintenance_window.py \
+    tests/test_multica_project.py
+python3 -W error -m unittest discover -s tests -p 'test_*.py'
 ./tests/check-maintenance-window.sh
 python3 -c 'import tomllib; tomllib.load(open("config/herdr/config.toml", "rb")); tomllib.load(open("config/mise/config.toml", "rb")); tomllib.load(open("config/nvim/stylua.toml", "rb")); tomllib.load(open("config/ohmyposh/zen.toml", "rb")); tomllib.load(open("onboarding/Cargo.toml", "rb"))'
 test -s onboarding/Cargo.lock

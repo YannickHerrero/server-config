@@ -1,0 +1,111 @@
+---
+- name: Install Multica orchestration packages
+  become: true
+  become_user: root
+  when: server_config_multica_enabled
+  ansible.builtin.apt:
+    name:
+      - python3-yaml
+    state: present
+  tags:
+    - multica
+    - packages
+
+- name: Create the Multica helper library directory
+  become: true
+  become_user: root
+  when: server_config_multica_enabled
+  ansible.builtin.file:
+    path: /usr/local/lib/server-config
+    owner: root
+    group: root
+    mode: "0755"
+    state: directory
+  tags:
+    - multica
+
+- name: Install the Multica project helper library
+  become: true
+  become_user: root
+  when: server_config_multica_enabled
+  ansible.builtin.copy:
+    src: multica_project.py
+    dest: /usr/local/lib/server-config/multica_project.py
+    owner: root
+    group: root
+    mode: "0644"
+  tags:
+    - multica
+
+- name: Install the Multica project commands
+  become: true
+  become_user: root
+  when: server_config_multica_enabled
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "/usr/local/bin/{{ item }}"
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - multica-project-config
+    - multica-project-sync
+  tags:
+    - multica
+
+- name: Install the Multica project synchronization service
+  become: true
+  become_user: root
+  when: server_config_multica_enabled
+  ansible.builtin.template:
+    src: multica-project-sync.service.j2
+    dest: /etc/systemd/system/multica-project-sync.service
+    owner: root
+    group: root
+    mode: "0644"
+  register: server_config_multica_sync_service
+  tags:
+    - multica
+
+- name: Install the Multica project synchronization timer
+  become: true
+  become_user: root
+  when: server_config_multica_enabled
+  ansible.builtin.template:
+    src: multica-project-sync.timer.j2
+    dest: /etc/systemd/system/multica-project-sync.timer
+    owner: root
+    group: root
+    mode: "0644"
+  register: server_config_multica_sync_timer
+  tags:
+    - multica
+
+- name: Enable the Multica project synchronization timer
+  become: true
+  become_user: root
+  when:
+    - server_config_multica_enabled
+    - >-
+      not ansible_check_mode
+      or not server_config_multica_sync_timer.changed
+  ansible.builtin.systemd_service:
+    name: multica-project-sync.timer
+    daemon_reload: true
+    enabled: true
+    state: started
+  tags:
+    - multica
+
+- name: Report the planned Multica synchronization timer activation
+  when:
+    - server_config_multica_enabled
+    - ansible_check_mode
+    - server_config_multica_sync_timer.changed
+  ansible.builtin.debug:
+    msg: >-
+      Enable project synchronization at 08:00 and 20:00
+      {{ server_config_multica_timezone }}
+  changed_when: true
+  tags:
+    - multica
