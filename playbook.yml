@@ -536,26 +536,39 @@
         - access
         - firewall
 
-    - name: Allow Mosh only through Tailscale
+    - name: Read the current Mosh firewall state
       become: true
       become_user: root
       ansible.builtin.command:
         argv:
           - ufw
-          - allow
-          - in
-          - "on"
-          - tailscale0
-          - to
-          - any
-          - port
-          - "{{ server_config_mosh_port_range }}"
-          - proto
-          - udp
-          - comment
-          - Mosh over Tailscale
-      register: server_config_ufw_mosh_rule
-      changed_when: "'Rules updated' in server_config_ufw_mosh_rule.stdout"
+          - status
+      register: server_config_ufw_mosh_status
+      changed_when: false
+      check_mode: false
+      tags:
+        - access
+        - firewall
+        - mosh
+
+    - name: Allow Mosh only through Tailscale
+      become: true
+      become_user: root
+      ansible.builtin.command:
+        argv: >-
+          {{
+            ['ufw']
+            + (['--dry-run'] if ansible_check_mode else [])
+            + [
+              'allow', 'in', 'on', 'tailscale0', 'to', 'any',
+              'port', server_config_mosh_port_range, 'proto', 'udp',
+              'comment', 'Mosh over Tailscale'
+            ]
+          }}
+      changed_when: >-
+        server_config_mosh_port_range + '/udp on tailscale0'
+        not in server_config_ufw_mosh_status.stdout
+      check_mode: false
       tags:
         - access
         - firewall
@@ -690,6 +703,7 @@
           - "'Default: deny (incoming), allow (outgoing)' in server_config_ufw_final.stdout"
           - "'22/tcp on tailscale0' in server_config_ufw_final.stdout"
           - >-
+            ansible_check_mode or
             server_config_mosh_port_range + '/udp on tailscale0' in server_config_ufw_final.stdout
           - >-
             (server_config_tailscale_port | string) + '/udp on '
