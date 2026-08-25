@@ -81,6 +81,31 @@ server_config_docker_packages:
   - slirp4netns
   - uidmap
 
+server_config_multica_enabled: true
+server_config_multica_version: "0.4.34"
+server_config_multica_git_version: v0.4.34
+server_config_multica_git_commit: e5f976144b50b99efe4ceac63f11f86fa8e2a6c7
+server_config_multica_git_url: https://github.com/multica-ai/multica.git
+server_config_multica_cli_url: >-
+  https://github.com/multica-ai/multica/releases/download/v0.4.34/multica-cli-0.4.34-linux-amd64.tar.gz
+server_config_multica_cli_sha256: 14f8f463cdf2b2adbad5cc7cbe3902a03cecf605f2f52b8f148cc0dc502e98db
+server_config_multica_user: multica
+server_config_multica_home: /home/multica
+server_config_multica_subid_start: 165536
+server_config_multica_subid_count: 65536
+server_config_multica_port: 8444
+server_config_multica_proxy_port: 4180
+server_config_multica_backend_port: 4181
+server_config_multica_frontend_port: 4182
+server_config_multica_timezone: Europe/Paris
+server_config_multica_daemon_max_tasks: 3
+server_config_multica_repo_dir: "{{ ansible_user_dir }}/.local/share/multica/server"
+server_config_multica_env_file: "{{ ansible_user_dir }}/.config/multica/server.env"
+server_config_multica_agent_workspaces: /home/multica/workspaces
+server_config_multica_project_map: /home/multica/.local/state/multica/project-map.json
+server_config_multica_mise_config: /home/multica/.config/mise/config.toml
+server_config_multica_pi_dir: /home/multica/.pi/multica
+
 server_config_packages:
   - ansible-core
   - ansible-lint

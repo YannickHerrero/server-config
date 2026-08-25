@@ -61,6 +61,11 @@
         - docker
         - multica
 
+    - name: Configure the isolated Multica runtime
+      ansible.builtin.import_tasks: tasks/multica-runtime.yml
+      tags:
+        - multica
+
     - name: Set the timezone file
       become: true
       become_user: root

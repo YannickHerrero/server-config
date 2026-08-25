@@ -1,0 +1,560 @@
+---
+- name: Inspect the dedicated Multica account
+  become: true
+  become_user: root
+  ansible.builtin.command:
+    argv:
+      - getent
+      - passwd
+      - "{{ server_config_multica_user }}"
+  register: server_config_multica_account
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  tags:
+    - multica
+    - users
+
+- name: Create the dedicated Multica account
+  become: true
+  become_user: root
+  when: server_config_multica_enabled
+  ansible.builtin.user:
+    name: "{{ server_config_multica_user }}"
+    comment: Isolated Multica agent runtime
+    home: "{{ server_config_multica_home }}"
+    create_home: true
+    shell: /bin/bash
+    password_lock: true
+    groups:
+      - kvm
+    append: true
+    state: present
+  tags:
+    - multica
+    - users
+
+- name: Configure subordinate user IDs for Multica
+  become: true
+  become_user: root
+  when: server_config_multica_enabled
+  ansible.builtin.lineinfile:
+    path: /etc/subuid
+    regexp: "^{{ server_config_multica_user | regex_escape }}:"
+    line: >-
+      {{ server_config_multica_user }}:{{ server_config_multica_subid_start }}:{{ server_config_multica_subid_count }}
+    owner: root
+    group: root
+    mode: "0644"
+  tags:
+    - docker
+    - multica
+    - users
+
+- name: Configure subordinate group IDs for Multica
+  become: true
+  become_user: root
+  when: server_config_multica_enabled
+  ansible.builtin.lineinfile:
+    path: /etc/subgid
+    regexp: "^{{ server_config_multica_user | regex_escape }}:"
+    line: >-
+      {{ server_config_multica_user }}:{{ server_config_multica_subid_start }}:{{ server_config_multica_subid_count }}
+    owner: root
+    group: root
+    mode: "0644"
+  tags:
+    - docker
+    - multica
+    - users
+
+- name: Report the planned first-time Multica account provisioning
+  when:
+    - server_config_multica_enabled
+    - ansible_check_mode
+    - server_config_multica_account.rc != 0
+  ansible.builtin.debug:
+    msg: >-
+      Create {{ server_config_multica_user }} and provision its private Pi,
+      GitHub, Docker, and Multica runtime directories
+  changed_when: true
+  tags:
+    - multica
+    - users
+
+- name: Create the pinned Multica CLI directories
+  become: true
+  become_user: root
+  when: server_config_multica_enabled
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+    state: directory
+  loop:
+    - path: /opt/server-config/multica
+      mode: "0755"
+    - path: "/opt/server-config/multica/{{ server_config_multica_version }}"
+      mode: "0755"
+    - path: /var/cache/server-config
+      mode: "0755"
+  tags:
+    - multica
+
+- name: Download the pinned Multica CLI
+  become: true
+  become_user: root
+  when: server_config_multica_enabled
+  ansible.builtin.get_url:
+    url: "{{ server_config_multica_cli_url }}"
+    dest: "/var/cache/server-config/multica-cli-{{ server_config_multica_version }}.tar.gz"
+    checksum: "sha256:{{ server_config_multica_cli_sha256 }}"
+    owner: root
+    group: root
+    mode: "0644"
+  tags:
+    - multica
+
+- name: Extract the pinned Multica CLI
+  become: true
+  become_user: root
+  when: server_config_multica_enabled
+  ansible.builtin.unarchive:
+    src: "/var/cache/server-config/multica-cli-{{ server_config_multica_version }}.tar.gz"
+    dest: "/opt/server-config/multica/{{ server_config_multica_version }}"
+    remote_src: true
+    creates: "/opt/server-config/multica/{{ server_config_multica_version }}/multica"
+    owner: root
+    group: root
+  tags:
+    - multica
+
+- name: Select the pinned Multica CLI
+  become: true
+  become_user: root
+  when: server_config_multica_enabled
+  ansible.builtin.file:
+    src: "/opt/server-config/multica/{{ server_config_multica_version }}/multica"
+    dest: /usr/local/bin/multica
+    owner: root
+    group: root
+    state: link
+  tags:
+    - multica
+
+- name: Verify the pinned Multica CLI
+  when:
+    - server_config_multica_enabled
+    - not ansible_check_mode
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/multica
+      - version
+  register: server_config_multica_cli_version
+  changed_when: false
+  failed_when: >-
+    server_config_multica_version not in server_config_multica_cli_version.stdout
+  tags:
+    - multica
+
+- name: Provision the Multica user runtime
+  become: true
+  become_user: root
+  when:
+    - server_config_multica_enabled
+    - not ansible_check_mode or server_config_multica_account.rc == 0
+  tags:
+    - multica
+    - users
+  block:
+    - name: Restrict the Multica home directory
+      ansible.builtin.file:
+        path: "{{ server_config_multica_home }}"
+        owner: "{{ server_config_multica_user }}"
+        group: "{{ server_config_multica_user }}"
+        mode: "0750"
+        state: directory
+
+    - name: Create private Multica runtime directories
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        owner: "{{ server_config_multica_user }}"
+        group: "{{ server_config_multica_user }}"
+        mode: "{{ item.mode }}"
+        state: directory
+      loop:
+        - path: "{{ server_config_multica_home }}/.cache/npm"
+          mode: "0700"
+        - path: "{{ server_config_multica_home }}/.config/git"
+          mode: "0700"
+        - path: "{{ server_config_multica_home }}/.config/mise"
+          mode: "0700"
+        - path: "{{ server_config_multica_home }}/.local/bin"
+          mode: "0755"
+        - path: "{{ server_config_multica_home }}/.local/share/docker"
+          mode: "0700"
+        - path: "{{ server_config_multica_home }}/.local/state/multica"
+          mode: "0700"
+        - path: "{{ server_config_multica_pi_dir }}"
+          mode: "0700"
+        - path: "{{ server_config_multica_agent_workspaces }}"
+          mode: "0700"
+
+    - name: Install mise for the Multica account
+      ansible.builtin.get_url:
+        url: "{{ server_config_mise_url }}"
+        dest: "{{ server_config_multica_home }}/.local/bin/mise"
+        checksum: "sha256:{{ server_config_mise_sha256 }}"
+        owner: "{{ server_config_multica_user }}"
+        group: "{{ server_config_multica_user }}"
+        mode: "0755"
+
+    - name: Install the dedicated Multica mise configuration
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/config/multica/mise.toml"
+        dest: "{{ server_config_multica_mise_config }}"
+        owner: "{{ server_config_multica_user }}"
+        group: "{{ server_config_multica_user }}"
+        mode: "0600"
+
+    - name: Install the dedicated Pi settings
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/config/multica/pi-settings.json"
+        dest: "{{ server_config_multica_pi_dir }}/settings.json"
+        owner: "{{ server_config_multica_user }}"
+        group: "{{ server_config_multica_user }}"
+        mode: "0600"
+
+    - name: Check the dedicated Multica toolchain
+      become_user: "{{ server_config_multica_user }}"
+      ansible.builtin.command:
+        argv:
+          - "{{ server_config_multica_home }}/.local/bin/mise"
+          - install
+          - --dry-run-code
+      environment:
+        HOME: "{{ server_config_multica_home }}"
+        PATH: "{{ server_config_multica_home }}/.local/bin:/usr/bin:/bin"
+      register: server_config_multica_mise_missing
+      changed_when: server_config_multica_mise_missing.rc == 1
+      failed_when: server_config_multica_mise_missing.rc not in [0, 1]
+      check_mode: false
+
+    - name: Install the dedicated Multica toolchain
+      become_user: "{{ server_config_multica_user }}"
+      when:
+        - server_config_multica_mise_missing.rc == 1
+        - not ansible_check_mode
+      ansible.builtin.command:
+        argv:
+          - "{{ server_config_multica_home }}/.local/bin/mise"
+          - install
+          - --yes
+      environment:
+        HOME: "{{ server_config_multica_home }}"
+        PATH: "{{ server_config_multica_home }}/.local/bin:/usr/bin:/bin"
+      changed_when: true
+
+    - name: Read the dedicated Pi version
+      become_user: "{{ server_config_multica_user }}"
+      ansible.builtin.command:
+        argv:
+          - "{{ server_config_multica_home }}/.local/bin/mise"
+          - exec
+          - "node@{{ server_config_node_version }}"
+          - --
+          - "{{ server_config_multica_home }}/.local/bin/pi"
+          - --version
+      environment:
+        HOME: "{{ server_config_multica_home }}"
+        PATH: "{{ server_config_multica_home }}/.local/bin:/usr/bin:/bin"
+      register: server_config_multica_installed_pi
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: Install Pi for the dedicated Multica account
+      become_user: "{{ server_config_multica_user }}"
+      when:
+        - not ansible_check_mode
+        - server_config_multica_installed_pi.stdout != server_config_pi_version
+      ansible.builtin.command:
+        argv:
+          - "{{ server_config_multica_home }}/.local/bin/mise"
+          - exec
+          - "node@{{ server_config_node_version }}"
+          - --
+          - npm
+          - install
+          - --global
+          - --prefix
+          - "{{ server_config_multica_home }}/.local"
+          - --ignore-scripts
+          - "@earendil-works/pi-coding-agent@{{ server_config_pi_version }}"
+      environment:
+        HOME: "{{ server_config_multica_home }}"
+        PATH: "{{ server_config_multica_home }}/.local/bin:/usr/bin:/bin"
+        npm_config_cache: "{{ server_config_multica_home }}/.cache/npm"
+      changed_when: true
+
+    - name: Verify Pi for the dedicated Multica account
+      become_user: "{{ server_config_multica_user }}"
+      when: not ansible_check_mode
+      ansible.builtin.command:
+        argv:
+          - "{{ server_config_multica_home }}/.local/bin/mise"
+          - exec
+          - "node@{{ server_config_node_version }}"
+          - --
+          - "{{ server_config_multica_home }}/.local/bin/pi"
+          - --version
+      environment:
+        HOME: "{{ server_config_multica_home }}"
+        PATH: "{{ server_config_multica_home }}/.local/bin:/usr/bin:/bin"
+        PI_CODING_AGENT_DIR: "{{ server_config_multica_pi_dir }}"
+      register: server_config_multica_pi_version
+      changed_when: false
+      failed_when: server_config_multica_pi_version.stdout != server_config_pi_version
+
+    - name: Install the Multica Git exclude file
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/config/git/ignore"
+        dest: "{{ server_config_multica_home }}/.config/git/ignore"
+        owner: "{{ server_config_multica_user }}"
+        group: "{{ server_config_multica_user }}"
+        mode: "0600"
+
+    - name: Configure the Multica Git exclude file
+      ansible.builtin.blockinfile:
+        path: "{{ server_config_multica_home }}/.gitconfig"
+        block: |-
+          [core]
+              excludesFile = ~/.config/git/ignore
+        marker: "# {mark} server-config Multica excludes"
+        create: true
+        owner: "{{ server_config_multica_user }}"
+        group: "{{ server_config_multica_user }}"
+        mode: "0600"
+
+- name: Install the managed user's Multica Git exclude file
+  when: server_config_multica_enabled
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/config/git/ignore"
+    dest: "{{ ansible_user_dir }}/.config/git/ignore"
+    owner: "{{ ansible_user_id }}"
+    group: "{{ ansible_user_gid }}"
+    mode: "0600"
+  tags:
+    - git
+    - multica
+
+- name: Configure the managed user's Multica Git exclude file
+  when: server_config_multica_enabled
+  ansible.builtin.blockinfile:
+    path: "{{ ansible_user_dir }}/.gitconfig"
+    block: |-
+      [core]
+          excludesFile = ~/.config/git/ignore
+    marker: "# {mark} server-config Multica excludes"
+    create: true
+    owner: "{{ ansible_user_id }}"
+    group: "{{ ansible_user_gid }}"
+    mode: "0600"
+  tags:
+    - git
+    - multica
+
+- name: Grant Multica traversal of the managed user's home
+  become: true
+  become_user: root
+  when:
+    - server_config_multica_enabled
+    - not ansible_check_mode or server_config_multica_account.rc == 0
+  ansible.posix.acl:
+    path: "{{ ansible_user_dir }}"
+    entity: "{{ server_config_multica_user }}"
+    etype: user
+    permissions: x
+    state: present
+  tags:
+    - multica
+    - users
+
+- name: Grant Multica access to existing development files
+  become: true
+  become_user: root
+  when:
+    - server_config_multica_enabled
+    - not ansible_check_mode or server_config_multica_account.rc == 0
+  ansible.posix.acl:
+    path: "{{ ansible_user_dir }}/dev"
+    entity: "{{ server_config_multica_user }}"
+    etype: user
+    permissions: rwX
+    recursive: true
+    state: present
+  tags:
+    - multica
+    - users
+
+- name: Grant Multica default access to new development files
+  become: true
+  become_user: root
+  when:
+    - server_config_multica_enabled
+    - not ansible_check_mode or server_config_multica_account.rc == 0
+  ansible.posix.acl:
+    path: "{{ ansible_user_dir }}/dev"
+    entity: "{{ server_config_multica_user }}"
+    etype: user
+    permissions: rwX
+    default: true
+    recursive: true
+    state: present
+  tags:
+    - multica
+    - users
+
+- name: Inspect the rootless Docker systemd template
+  become: true
+  become_user: root
+  ansible.builtin.stat:
+    path: /etc/systemd/system/server-config-docker@.service
+  register: server_config_rootless_docker_unit
+  tags:
+    - docker
+    - multica
+
+- name: Report the planned rootless Docker services
+  when:
+    - server_config_multica_enabled
+    - ansible_check_mode
+    - not server_config_rootless_docker_unit.stat.exists
+  ansible.builtin.debug:
+    msg: >-
+      Enable isolated rootless Docker services for {{ ansible_user_id }}
+      and {{ server_config_multica_user }}
+  changed_when: true
+  tags:
+    - docker
+    - multica
+
+- name: Enable the managed user's rootless Docker service
+  become: true
+  become_user: root
+  when:
+    - server_config_multica_enabled
+    - not ansible_check_mode or server_config_rootless_docker_unit.stat.exists
+  ansible.builtin.systemd_service:
+    name: "server-config-docker@{{ ansible_user_id }}.service"
+    enabled: true
+    state: started
+  tags:
+    - docker
+    - multica
+
+- name: Enable the Multica rootless Docker service
+  become: true
+  become_user: root
+  when:
+    - server_config_multica_enabled
+    - not ansible_check_mode or server_config_rootless_docker_unit.stat.exists
+    - not ansible_check_mode or server_config_multica_account.rc == 0
+  ansible.builtin.systemd_service:
+    name: "server-config-docker@{{ server_config_multica_user }}.service"
+    enabled: true
+    state: started
+  tags:
+    - docker
+    - multica
+
+- name: Verify the managed user's rootless Docker service
+  when:
+    - server_config_multica_enabled
+    - not ansible_check_mode
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/docker
+      - info
+      - --format
+      - "{{ '{{' }}json .SecurityOptions{{ '}}' }}"
+  environment:
+    HOME: "{{ ansible_user_dir }}"
+    DOCKER_HOST: >-
+      unix://{{ server_config_docker_runtime_dir }}/{{ ansible_user_id }}/docker.sock
+  register: server_config_managed_user_docker_info
+  changed_when: false
+  failed_when: >-
+    'name=rootless' not in server_config_managed_user_docker_info.stdout
+  tags:
+    - docker
+    - multica
+
+- name: Verify the Multica rootless Docker service
+  become: true
+  become_user: root
+  when:
+    - server_config_multica_enabled
+    - not ansible_check_mode
+  ansible.builtin.command:
+    argv:
+      - /usr/sbin/runuser
+      - -u
+      - "{{ server_config_multica_user }}"
+      - --
+      - /usr/bin/env
+      - "HOME={{ server_config_multica_home }}"
+      - >-
+        DOCKER_HOST=unix://{{ server_config_docker_runtime_dir }}/{{ server_config_multica_user }}/docker.sock
+      - /usr/local/bin/docker
+      - info
+      - --format
+      - "{{ '{{' }}json .SecurityOptions{{ '}}' }}"
+  register: server_config_multica_docker_info
+  changed_when: false
+  failed_when: "'name=rootless' not in server_config_multica_docker_info.stdout"
+  tags:
+    - docker
+    - multica
+
+- name: Install the Multica daemon systemd unit
+  become: true
+  become_user: root
+  when: server_config_multica_enabled
+  ansible.builtin.template:
+    src: multica-daemon.service.j2
+    dest: /etc/systemd/system/multica-daemon.service
+    owner: root
+    group: root
+    mode: "0644"
+  register: server_config_multica_daemon_unit
+  tags:
+    - multica
+
+- name: Enable the Multica daemon
+  become: true
+  become_user: root
+  when:
+    - server_config_multica_enabled
+    - not ansible_check_mode or not server_config_multica_daemon_unit.changed
+  ansible.builtin.systemd_service:
+    name: multica-daemon.service
+    daemon_reload: true
+    enabled: true
+    state: started
+  tags:
+    - multica
+
+- name: Report the planned Multica daemon activation
+  when:
+    - server_config_multica_enabled
+    - ansible_check_mode
+    - server_config_multica_daemon_unit.changed
+  ansible.builtin.debug:
+    msg: >-
+      Enable multica-daemon.service. The unit stays inactive until
+      {{ server_config_multica_home }}/.multica/config.json exists.
+  changed_when: true
+  tags:
+    - multica
