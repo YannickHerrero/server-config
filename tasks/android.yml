@@ -97,6 +97,27 @@
     - android
     - multica
 
+- name: Normalize the Android command-line tools permissions
+  become: true
+  become_user: root
+  when:
+    - server_config_multica_enabled
+    - server_config_android_enabled
+    - not ansible_check_mode or server_config_android_commandline_tools.stat.exists
+  ansible.builtin.file:
+    path: >-
+      {{ server_config_android_sdk_root }}/cmdline-tools/{{
+        server_config_android_commandline_tools_version
+      }}/cmdline-tools
+    owner: root
+    group: root
+    mode: "u=rwX,go=rX"
+    recurse: true
+    state: directory
+  tags:
+    - android
+    - multica
+
 - name: Select the pinned Android command-line tools
   become: true
   become_user: root
