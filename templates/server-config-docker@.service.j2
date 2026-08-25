@@ -1,0 +1,39 @@
+[Unit]
+Description=Rootless Docker Engine for %i
+Documentation=https://docs.docker.com/engine/security/rootless/
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+User=%i
+Environment=HOME=/home/%i
+Environment=XDG_RUNTIME_DIR={{ server_config_docker_runtime_dir }}/%i
+Environment=PATH={{ server_config_docker_install_dir }}:/usr/local/bin:/usr/bin:/bin
+Environment=DOCKERD_ROOTLESS_ROOTLESSKIT_STATE_DIR={{ server_config_docker_runtime_dir }}/%i/rootlesskit
+Environment=DOCKERD_ROOTLESS_ROOTLESSKIT_NET=slirp4netns
+RuntimeDirectory=server-config-docker/%i
+RuntimeDirectoryMode=0700
+ExecStart={{ server_config_docker_install_dir }}/dockerd-rootless.sh \
+    --host=unix://{{ server_config_docker_runtime_dir }}/%i/docker.sock \
+    --data-root=/home/%i/.local/share/docker \
+    --exec-root={{ server_config_docker_runtime_dir }}/%i/exec \
+    --pidfile={{ server_config_docker_runtime_dir }}/%i/docker.pid \
+    --storage-driver=fuse-overlayfs \
+    --userland-proxy=false \
+    --log-driver=local \
+    --log-opt=max-size=10m \
+    --log-opt=max-file=5
+Restart=on-failure
+RestartSec=3
+TimeoutStartSec=120
+TimeoutStopSec=60
+KillMode=mixed
+Delegate=true
+LimitNOFILE=1048576
+LimitNPROC=infinity
+TasksMax=infinity
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

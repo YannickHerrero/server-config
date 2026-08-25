@@ -56,6 +56,31 @@ server_config_citadel_supervisor_config: "{{ ansible_user_dir }}/.local/state/ci
 server_config_citadel_packages:
   - supervisor
 
+server_config_docker_version: "29.1.3"
+server_config_docker_url: https://download.docker.com/linux/static/stable/x86_64/docker-29.1.3.tgz
+server_config_docker_sha256: c019c608ba2bb009dd673f3230e4d743f36a78d36166c6c2444c05d0aa9ff0d9
+server_config_docker_rootless_url: >-
+  https://download.docker.com/linux/static/stable/x86_64/docker-rootless-extras-29.1.3.tgz
+server_config_docker_rootless_sha256: 32dc3dd0d8b512ccf30a7efe84d360b5ade65ac4fec92a2a5ad0fe791da6ab0d
+server_config_docker_compose_version: "2.40.3"
+server_config_docker_compose_url: >-
+  https://github.com/docker/compose/releases/download/v2.40.3/docker-compose-linux-x86_64
+server_config_docker_compose_sha256: dba9d98e1ba5bfe11d88c99b9bd32fc4a0624a30fafe68eea34d61a3e42fd372
+server_config_docker_buildx_version: "0.36.1"
+server_config_docker_buildx_url: >-
+  https://github.com/docker/buildx/releases/download/v0.36.1/buildx-v0.36.1.linux-amd64
+server_config_docker_buildx_sha256: 48af8a397ebd60178778bf63611dbcebe5f5e7a9be90eb9147b24b9587455778
+server_config_docker_install_dir: "/opt/server-config/docker/{{ server_config_docker_version }}"
+server_config_docker_runtime_dir: /run/server-config-docker
+server_config_docker_packages:
+  - acl
+  - dbus-user-session
+  - fuse-overlayfs
+  - iptables
+  - openssl
+  - slirp4netns
+  - uidmap
+
 server_config_packages:
   - ansible-core
   - ansible-lint

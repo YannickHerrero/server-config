@@ -1,0 +1,239 @@
+---
+- name: Install rootless container runtime packages
+  become: true
+  become_user: root
+  ansible.builtin.apt:
+    name: "{{ server_config_docker_packages }}"
+    state: present
+  tags:
+    - docker
+    - multica
+    - packages
+
+- name: Create the pinned Docker installation directories
+  become: true
+  become_user: root
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+    state: directory
+  loop:
+    - path: /var/cache/server-config
+      mode: "0755"
+    - path: /opt/server-config/docker
+      mode: "0755"
+    - path: "{{ server_config_docker_install_dir }}"
+      mode: "0755"
+    - path: /usr/local/lib/docker/cli-plugins
+      mode: "0755"
+  tags:
+    - docker
+    - multica
+
+- name: Download the pinned Docker Engine archive
+  become: true
+  become_user: root
+  ansible.builtin.get_url:
+    url: "{{ server_config_docker_url }}"
+    dest: "/var/cache/server-config/docker-{{ server_config_docker_version }}.tgz"
+    checksum: "sha256:{{ server_config_docker_sha256 }}"
+    owner: root
+    group: root
+    mode: "0644"
+  tags:
+    - docker
+    - multica
+
+- name: Extract the pinned Docker Engine
+  become: true
+  become_user: root
+  ansible.builtin.unarchive:
+    src: "/var/cache/server-config/docker-{{ server_config_docker_version }}.tgz"
+    dest: "{{ server_config_docker_install_dir }}"
+    remote_src: true
+    extra_opts:
+      - --strip-components=1
+    creates: "{{ server_config_docker_install_dir }}/dockerd"
+    owner: root
+    group: root
+  tags:
+    - docker
+    - multica
+
+- name: Download the pinned Docker rootless archive
+  become: true
+  become_user: root
+  ansible.builtin.get_url:
+    url: "{{ server_config_docker_rootless_url }}"
+    dest: "/var/cache/server-config/docker-rootless-extras-{{ server_config_docker_version }}.tgz"
+    checksum: "sha256:{{ server_config_docker_rootless_sha256 }}"
+    owner: root
+    group: root
+    mode: "0644"
+  tags:
+    - docker
+    - multica
+
+- name: Extract the pinned Docker rootless tools
+  become: true
+  become_user: root
+  ansible.builtin.unarchive:
+    src: "/var/cache/server-config/docker-rootless-extras-{{ server_config_docker_version }}.tgz"
+    dest: "{{ server_config_docker_install_dir }}"
+    remote_src: true
+    extra_opts:
+      - --strip-components=1
+    creates: "{{ server_config_docker_install_dir }}/dockerd-rootless.sh"
+    owner: root
+    group: root
+  tags:
+    - docker
+    - multica
+
+- name: Install the pinned Docker Compose plugin
+  become: true
+  become_user: root
+  ansible.builtin.get_url:
+    url: "{{ server_config_docker_compose_url }}"
+    dest: >-
+      /usr/local/lib/docker/cli-plugins/docker-compose-{{ server_config_docker_compose_version }}
+    checksum: "sha256:{{ server_config_docker_compose_sha256 }}"
+    owner: root
+    group: root
+    mode: "0755"
+  tags:
+    - docker
+    - multica
+
+- name: Select the pinned Docker Compose plugin
+  become: true
+  become_user: root
+  ansible.builtin.file:
+    src: "docker-compose-{{ server_config_docker_compose_version }}"
+    dest: /usr/local/lib/docker/cli-plugins/docker-compose
+    owner: root
+    group: root
+    state: link
+  tags:
+    - docker
+    - multica
+
+- name: Install the pinned Docker Buildx plugin
+  become: true
+  become_user: root
+  ansible.builtin.get_url:
+    url: "{{ server_config_docker_buildx_url }}"
+    dest: >-
+      /usr/local/lib/docker/cli-plugins/docker-buildx-{{ server_config_docker_buildx_version }}
+    checksum: "sha256:{{ server_config_docker_buildx_sha256 }}"
+    owner: root
+    group: root
+    mode: "0755"
+  tags:
+    - docker
+    - multica
+
+- name: Select the pinned Docker Buildx plugin
+  become: true
+  become_user: root
+  ansible.builtin.file:
+    src: "docker-buildx-{{ server_config_docker_buildx_version }}"
+    dest: /usr/local/lib/docker/cli-plugins/docker-buildx
+    owner: root
+    group: root
+    state: link
+  tags:
+    - docker
+    - multica
+
+- name: Select the pinned Docker client
+  become: true
+  become_user: root
+  ansible.builtin.file:
+    src: "{{ server_config_docker_install_dir }}/docker"
+    dest: /usr/local/bin/docker
+    owner: root
+    group: root
+    state: link
+  tags:
+    - docker
+    - multica
+
+- name: Block an accidental rootful Docker service
+  become: true
+  become_user: root
+  ansible.builtin.file:
+    src: /dev/null
+    dest: "/etc/systemd/system/{{ item }}"
+    owner: root
+    group: root
+    state: link
+    force: true
+  loop:
+    - docker.service
+    - docker.socket
+  tags:
+    - docker
+    - multica
+
+- name: Install the rootless Docker systemd template
+  become: true
+  become_user: root
+  ansible.builtin.template:
+    src: server-config-docker@.service.j2
+    dest: /etc/systemd/system/server-config-docker@.service
+    owner: root
+    group: root
+    mode: "0644"
+  register: server_config_docker_unit
+  tags:
+    - docker
+    - multica
+
+- name: Reload systemd for the rootless Docker template
+  become: true
+  become_user: root
+  when:
+    - server_config_docker_unit.changed
+    - not ansible_check_mode
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  tags:
+    - docker
+    - multica
+
+- name: Verify the pinned Docker client
+  when: not ansible_check_mode
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/docker
+      - --version
+  register: server_config_docker_version_output
+  changed_when: false
+  failed_when: >-
+    'Docker version ' + server_config_docker_version
+    not in server_config_docker_version_output.stdout
+  tags:
+    - docker
+    - multica
+
+- name: Verify the pinned Docker Compose plugin
+  when: not ansible_check_mode
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/docker
+      - compose
+      - version
+      - --short
+  environment:
+    DOCKER_CONFIG: /tmp/server-config-docker-empty-config
+  register: server_config_docker_compose_output
+  changed_when: false
+  failed_when: >-
+    server_config_docker_compose_output.stdout | trim
+    != server_config_docker_compose_version
+  tags:
+    - docker
+    - multica

@@ -55,6 +55,12 @@
         - headless-browser
         - packages
 
+    - name: Install the pinned rootless container runtime
+      ansible.builtin.import_tasks: tasks/docker.yml
+      tags:
+        - docker
+        - multica
+
     - name: Set the timezone file
       become: true
       become_user: root
