@@ -4,16 +4,19 @@ from __future__ import annotations
 import importlib.machinery
 import importlib.util
 import io
+import json
 import os
 from pathlib import Path
 import pwd
 import shutil
+import signal
 import subprocess
 import sys
 import threading
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "files/server-config-window"
@@ -26,18 +29,21 @@ loader.exec_module(window)
 
 
 class MaintenanceWindowTests(unittest.TestCase):
-    def config(self, root: Path, *, sensitive: bool = False):
+    def config(self, root: Path, *, sensitive: bool = False, seconds: int = 3600):
         account = pwd.getpwuid(os.getuid())
         return window.BrokerConfig(
-            authorization=window.Authorization(seconds=3600, allow_sensitive=sensitive),
+            authorization=window.Authorization(seconds=seconds, allow_sensitive=sensitive),
             user=account.pw_name,
             uid=account.pw_uid,
             gid=account.pw_gid,
             home=Path(account.pw_dir),
             repo=root,
-            controller_unit=f"citadel@{account.pw_name}.service",
+            supervisor_config=root / "supervisord.conf",
             socket_path=root / "window.sock",
+            lock_path=root / "window.lock",
             log_dir=root / "logs",
+            active_path=root / "active.json",
+            suspended_state_path=root / "suspended-services.json",
         )
 
     def test_duration_is_bounded_at_eight_hours(self):
@@ -158,9 +164,10 @@ class MaintenanceWindowTests(unittest.TestCase):
     def test_systemd_template_preserves_expiry_and_controller_boundaries(self):
         content = (ROOT / "templates/server-config-maintenance-window@.service.j2").read_text()
         self.assertIn("RuntimeMaxSec={{ server_config_maintenance_window_max_minutes }}m", content)
-        self.assertIn("ExecStartPre=/usr/bin/systemctl stop citadel@", content)
-        self.assertIn("ExecStopPost=/usr/local/bin/server-config-window restore-controller", content)
-        self.assertIn("--controller-unit citadel@", content)
+        self.assertNotIn("systemctl stop citadel@", content)
+        self.assertIn("ExecCondition=/usr/bin/systemctl is-active --quiet citadel@", content)
+        self.assertIn("ExecStopPost=/usr/local/bin/server-config-window restore-services", content)
+        self.assertIn("--supervisor-config", content)
         self.assertIn("RuntimeDirectoryMode=0750", content)
         self.assertNotIn("NOPASSWD", content)
 
@@ -191,6 +198,79 @@ class MaintenanceWindowTests(unittest.TestCase):
                 text=True,
             )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_broker_suspends_and_restores_only_running_services(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            config = self.config(root)
+            config.supervisor_config.write_text("[supervisorctl]\n")
+            initial = subprocess.CompletedProcess(
+                [],
+                3,
+                "citadel-dashboard RUNNING pid 1\nnormandy RUNNING pid 2\nreader STOPPED Not started\n"
+                "maintenance-normandy-build STOPPED Not started\n",
+                "",
+            )
+            stopped = subprocess.CompletedProcess([], 0, "normandy: stopped\n", "")
+            suspended = subprocess.CompletedProcess(
+                [],
+                3,
+                "citadel-dashboard RUNNING pid 1\nnormandy STOPPED Not started\nreader STOPPED Not started\n"
+                "maintenance-normandy-build STOPPED Not started\n",
+                "",
+            )
+            with mock.patch.object(window, "supervisor_as_user", side_effect=[initial, stopped, suspended]) as call:
+                self.assertEqual(window.suspend_supervisor_services(config), ["normandy"])
+            self.assertEqual(json.loads(config.suspended_state_path.read_text()), {"services": ["normandy"]})
+            self.assertEqual(call.call_args_list[1].args[1], ["stop", "normandy"])
+
+            started = subprocess.CompletedProcess([], 0, "normandy: started\n", "")
+            with mock.patch.object(window, "supervisor_as_user", side_effect=[suspended, started]) as call:
+                self.assertEqual(window.restore_supervisor_services(config), [])
+            self.assertEqual(call.call_args_list[1].args[1], ["start", "normandy"])
+            self.assertFalse(config.suspended_state_path.exists())
+
+    def test_failed_convergence_leaves_the_window_open(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            config = self.config(root, seconds=5)
+            config.supervisor_config.write_text("[supervisorctl]\n")
+            client_results: list[dict[str, object]] = []
+            client_errors: list[BaseException] = []
+
+            def use_window():
+                try:
+                    deadline = time.monotonic() + 2
+                    while not config.socket_path.exists() and time.monotonic() < deadline:
+                        time.sleep(0.01)
+                    client_results.append(window.request("converge", config.socket_path))
+                    client_results.append(window.request("status", config.socket_path))
+                    client_results.append(window.request("close", config.socket_path))
+                except BaseException as error:
+                    client_errors.append(error)
+
+            original_term = signal.getsignal(signal.SIGTERM)
+            original_int = signal.getsignal(signal.SIGINT)
+            thread = threading.Thread(target=use_window)
+            thread.start()
+            try:
+                with (
+                    mock.patch.object(window, "validate_broker_config"),
+                    mock.patch.object(window, "suspend_supervisor_services", return_value=[]),
+                    mock.patch.object(window, "restore_supervisor_services", return_value=[]),
+                    mock.patch.object(window, "run_convergence", return_value=(False, "dry run failed")),
+                ):
+                    self.assertEqual(window.run_daemon(config), 0)
+            finally:
+                signal.signal(signal.SIGTERM, original_term)
+                signal.signal(signal.SIGINT, original_int)
+            thread.join(timeout=2)
+            self.assertFalse(thread.is_alive())
+            self.assertEqual(client_errors, [])
+            self.assertEqual(client_results[0], {"type": "result", "ok": False, "message": "dry run failed"})
+            self.assertTrue(client_results[1]["ok"])
+            self.assertEqual(client_results[1]["message"], "open")
+            self.assertTrue(client_results[2]["ok"])
 
     def test_broker_uses_a_nonblocking_global_window_lock(self):
         with tempfile.TemporaryDirectory() as temporary:

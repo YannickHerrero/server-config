@@ -98,7 +98,7 @@ A maintenance window lets the agent converge several committed `server-config` c
 sudo server-config-window open --minutes 30
 ```
 
-The maximum duration is eight hours (`--minutes 480`). Opening a window stops Citadel and its managed applications so Normandy's browser terminal cannot reach the broker. Citadel starts again when the window closes, expires, or fails.
+The maximum duration is eight hours (`--minutes 480`). Opening a window keeps the Citadel dashboard available but suspends its other running Supervisor services, including Normandy. The broker records the exact running set and restores it when the window closes or expires.
 
 While the window is open, the agent uses:
 
@@ -108,7 +108,9 @@ server-config-window converge
 server-config-window close
 ```
 
-`converge` accepts no Ansible arguments. It requires a clean committed `main` that is not behind `origin/main`, then runs validation, an Ansible dry run, the apply, a second dry run that must report `changed=0`, and doctor. It writes private audit and command logs under `/var/log/server-config` and closes the window after any failed convergence. It never commits or pushes source changes.
+`converge` accepts no Ansible arguments. It requires a clean committed `main` that is not behind `origin/main`, then runs validation, an Ansible dry run, the apply, a second dry run that must report `changed=0`, and doctor. It writes private audit and command logs under `/var/log/server-config`. A failed convergence returns an error but leaves the window open until its original deadline or an explicit close. It never commits or pushes source changes.
+
+Citadel displays the remaining time and exposes a fixed close action. Service controls and maintenance actions stay locked while the window is active. Citadel cannot request convergence through its API.
 
 A normal window skips access, firewall, SSH, Tailscale, sudo, user-account, Citadel, and maintenance-window tasks. To authorize the host-access categories for the whole window, open it with an additional warning:
 
@@ -116,9 +118,9 @@ A normal window skips access, firewall, SSH, Tailscale, sudo, user-account, Cita
 sudo server-config-window open --minutes 30 --allow-sensitive
 ```
 
-Citadel and maintenance-window tasks always remain blocked because they control the browser shell and the broker itself. Apply changes to those tasks through the ordinary interactive workflow.
+Citadel bootstrap and maintenance-window tasks always remain blocked because they control the dashboard and the broker itself. Apply changes to those tasks through the ordinary interactive workflow.
 
-The broker grants root-equivalent execution of the committed playbook during the authorized period. Its systemd service and executable remain root-owned, it installs no passwordless sudo rule, and only the managed Unix user can access its runtime socket. Do not open a window while another person or untrusted process can use the managed Unix account.
+The broker grants root-equivalent execution of the committed playbook during the authorized period. Its systemd service and executable remain root-owned, it installs no passwordless sudo rule, and only the managed Unix user can access its runtime socket. The dashboard remains available because the broker suspends the services that could expose the socket through a remote shell. Do not open a window while another person or untrusted process can use the managed Unix account.
 
 Git identity is optional local metadata. The onboarding form writes it to the ignored file `config/git/identity.local` with mode `0600`. The playbook links it into the effective global Git configuration while preserving authentication managed by `gh`. `config/git/identity.example` documents the file format.
 

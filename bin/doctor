@@ -496,24 +496,30 @@ fi
 if [[ $EXPECTED_CITADEL_ENABLED == true ]]; then
     section "Citadel"
     citadel_unit="citadel@$USER.service"
-    if [[ -S $MAINTENANCE_WINDOW_SOCKET ]]; then
-        if systemctl is-enabled --quiet "$citadel_unit" && ! systemctl is-active --quiet "$citadel_unit"; then
-            warn "$citadel_unit is intentionally stopped during the maintenance window"
-        else
-            fail "$citadel_unit has an unexpected maintenance-window state"
-        fi
+    if systemctl is-enabled --quiet "$citadel_unit" && systemctl is-active --quiet "$citadel_unit"; then
+        pass "$citadel_unit is enabled and active"
     else
-        if systemctl is-enabled --quiet "$citadel_unit" && systemctl is-active --quiet "$citadel_unit"; then
-            pass "$citadel_unit is enabled and active"
+        fail "$citadel_unit is not enabled and active"
+    fi
+    if citadel_health=$(curl --fail --silent --show-error \
+        "http://127.0.0.1:$EXPECTED_CITADEL_PORT/api/health" 2>/dev/null) \
+        && jq -e '.status == "ok"' <<<"$citadel_health" >/dev/null; then
+        pass "Citadel localhost health check passed"
+    else
+        fail "Citadel localhost health check failed"
+    fi
+    if [[ -S $MAINTENANCE_WINDOW_SOCKET ]]; then
+        citadel_processes=$(supervisorctl \
+            -c "$HOME/.local/state/citadel/supervisord.conf" status 2>/dev/null || true)
+        active_managed_services=$(awk \
+            '$2 == "RUNNING" && $1 != "citadel-dashboard" { print $1 }' \
+            <<<"$citadel_processes")
+        if ! grep -Eq '^citadel-dashboard[[:space:]]+RUNNING' <<<"$citadel_processes"; then
+            fail "Citadel Supervisor status is unavailable during the maintenance window"
+        elif [[ -z $active_managed_services ]]; then
+            pass "Citadel managed services are suspended during the maintenance window"
         else
-            fail "$citadel_unit is not enabled and active"
-        fi
-        if citadel_health=$(curl --fail --silent --show-error \
-            "http://127.0.0.1:$EXPECTED_CITADEL_PORT/api/health" 2>/dev/null) \
-            && jq -e '.status == "ok"' <<<"$citadel_health" >/dev/null; then
-            pass "Citadel localhost health check passed"
-        else
-            fail "Citadel localhost health check failed"
+            fail "Citadel managed services remain active: $active_managed_services"
         fi
     fi
     if systemctl is-enabled --quiet supervisor.service 2>/dev/null; then

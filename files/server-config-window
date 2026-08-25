@@ -27,6 +27,8 @@ MIN_MINUTES = 1
 DEFAULT_MINUTES = 30
 MAX_SECONDS = MAX_MINUTES * 60
 SOCKET_PATH = Path("/run/server-config-maintenance-window/window.sock")
+ACTIVE_PATH = Path("/run/server-config-maintenance-window/active.json")
+SUSPENDED_STATE_PATH = Path("/run/server-config-maintenance-window/suspended-services.json")
 LOCK_PATH = Path("/run/server-config-maintenance-window.lock")
 LOG_DIR = Path("/var/log/server-config")
 SYSTEMCTL = "/usr/bin/systemctl"
@@ -34,6 +36,8 @@ RUNUSER = "/usr/sbin/runuser"
 ENV = "/usr/bin/env"
 GIT = "/usr/bin/git"
 ANSIBLE_PLAYBOOK = "/usr/bin/ansible-playbook"
+SUPERVISORCTL = "/usr/bin/supervisorctl"
+CITADEL_PROGRAM = "citadel-dashboard"
 WINDOW_UNIT_PREFIX = "server-config-maintenance-window"
 ALWAYS_SKIPPED_TAGS = ("citadel", "maintenance-window")
 SENSITIVE_TAGS = ("access", "firewall", "ssh", "sudo", "tailscale", "users")
@@ -41,6 +45,9 @@ RECAP_RE = re.compile(
     r"^[A-Za-z0-9_.-]+\s+:\s+ok=\d+\s+changed=0\s+unreachable=0\s+failed=0",
     re.MULTILINE,
 )
+SUPERVISOR_STATUS_RE = re.compile(r"^([A-Za-z0-9:_-]+)\s+([A-Z]+)(?:\s|$)")
+SUPERVISOR_STABLE_STATES = {"EXITED", "FATAL", "RUNNING", "STOPPED", "UNKNOWN"}
+SUPERVISOR_STATUS_RETURN_CODES = {0, 3}
 
 
 class WindowError(RuntimeError):
@@ -66,10 +73,12 @@ class BrokerConfig:
     gid: int
     home: Path
     repo: Path
-    controller_unit: str
+    supervisor_config: Path
     socket_path: Path = SOCKET_PATH
     lock_path: Path = LOCK_PATH
     log_dir: Path = LOG_DIR
+    active_path: Path = ACTIVE_PATH
+    suspended_state_path: Path = SUSPENDED_STATE_PATH
 
 
 @dataclass(frozen=True)
@@ -239,6 +248,154 @@ def capture_as_user(config: BrokerConfig, command: Sequence[str]) -> subprocess.
         capture_output=True,
         text=True,
         timeout=30,
+    )
+
+
+def supervisor_as_user(
+    config: BrokerConfig,
+    arguments: Sequence[str],
+    *,
+    timeout: int = 330,
+) -> subprocess.CompletedProcess[str]:
+    try:
+        return subprocess.run(
+            as_user(config, [SUPERVISORCTL, "-c", str(config.supervisor_config), *arguments]),
+            cwd=config.home,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as error:
+        raise WindowError("Citadel Supervisor operation timed out") from error
+
+
+def supervisor_status(config: BrokerConfig) -> dict[str, str]:
+    result = supervisor_as_user(config, ["status"], timeout=30)
+    if result.returncode not in SUPERVISOR_STATUS_RETURN_CODES:
+        detail = (result.stderr or result.stdout).strip()
+        raise WindowError(f"cannot inspect Citadel services: {detail}")
+    statuses: dict[str, str] = {}
+    for line in result.stdout.splitlines():
+        match = SUPERVISOR_STATUS_RE.match(line)
+        if match is None:
+            raise WindowError(f"cannot parse Supervisor status: {line}")
+        name, state = match.groups()
+        statuses[name] = state
+    if statuses.get(CITADEL_PROGRAM) != "RUNNING":
+        raise WindowError("Citadel must be running before a maintenance window opens")
+    return statuses
+
+
+def write_private_json(path: Path, value: object, *, gid: int, mode: int = 0o600) -> None:
+    path.parent.mkdir(mode=0o750, parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, mode)
+    try:
+        with os.fdopen(descriptor, "w") as file:
+            json.dump(value, file, sort_keys=True)
+            file.write("\n")
+        os.chown(temporary, 0 if os.geteuid() == 0 else os.geteuid(), gid)
+        os.chmod(temporary, mode)
+        os.replace(temporary, path)
+    finally:
+        with contextlib.suppress(FileNotFoundError):
+            temporary.unlink()
+
+
+def suspended_service_names(path: Path) -> list[str]:
+    if not path.is_file():
+        return []
+    try:
+        value = json.loads(path.read_text())
+    except (json.JSONDecodeError, OSError) as error:
+        raise WindowError("cannot read the suspended Citadel service state") from error
+    services = value.get("services") if isinstance(value, dict) else None
+    if not isinstance(services, list) or any(
+        not isinstance(name, str) or re.fullmatch(r"[A-Za-z0-9:_-]+", name) is None
+        for name in services
+    ):
+        raise WindowError("invalid suspended Citadel service state")
+    return services
+
+
+def suspend_supervisor_services(config: BrokerConfig) -> list[str]:
+    statuses = supervisor_status(config)
+    transient = [
+        name for name, state in statuses.items()
+        if name != CITADEL_PROGRAM and state not in SUPERVISOR_STABLE_STATES
+    ]
+    if transient:
+        raise WindowError(
+            "wait for transient Citadel services before opening the window: "
+            + ", ".join(sorted(transient))
+        )
+    active_maintenance = [
+        name for name, state in statuses.items()
+        if name.startswith("maintenance-") and state == "RUNNING"
+    ]
+    if active_maintenance:
+        raise WindowError(
+            "wait for Citadel maintenance actions before opening the window: "
+            + ", ".join(sorted(active_maintenance))
+        )
+    running = sorted(
+        name for name, state in statuses.items()
+        if name != CITADEL_PROGRAM and not name.startswith("maintenance-") and state == "RUNNING"
+    )
+    write_private_json(
+        config.suspended_state_path,
+        {"services": running},
+        gid=config.gid,
+    )
+    for name in running:
+        result = supervisor_as_user(config, ["stop", name])
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout).strip()
+            raise WindowError(f"cannot suspend Citadel service {name}: {detail}")
+    remaining = [
+        name for name, state in supervisor_status(config).items()
+        if name != CITADEL_PROGRAM and state == "RUNNING"
+    ]
+    if remaining:
+        raise WindowError("Citadel services remained active: " + ", ".join(sorted(remaining)))
+    return running
+
+
+def restore_supervisor_services(config: BrokerConfig) -> list[str]:
+    services = suspended_service_names(config.suspended_state_path)
+    if not services:
+        with contextlib.suppress(FileNotFoundError):
+            config.suspended_state_path.unlink()
+        return []
+    statuses = supervisor_status(config)
+    failures: list[str] = []
+    pending = list(services)
+    for name in services:
+        state = statuses.get(name)
+        if state not in {"RUNNING", "STARTING"}:
+            result = supervisor_as_user(config, ["start", name])
+            if result.returncode != 0:
+                failures.append(name)
+                continue
+        pending.remove(name)
+        write_private_json(
+            config.suspended_state_path,
+            {"services": pending},
+            gid=config.gid,
+        )
+    if not pending:
+        with contextlib.suppress(FileNotFoundError):
+            config.suspended_state_path.unlink()
+    return failures
+
+
+def mark_window(config: BrokerConfig, state: str) -> None:
+    write_private_json(
+        config.active_path,
+        {"state": state},
+        gid=config.gid,
+        mode=0o640,
     )
 
 
@@ -433,12 +590,6 @@ def receive_request(connection: socket.socket) -> str:
     return command
 
 
-def ensure_controller_stopped(unit: str) -> None:
-    active = subprocess.run([SYSTEMCTL, "is-active", "--quiet", unit], check=False).returncode == 0
-    if active:
-        subprocess.run([SYSTEMCTL, "stop", unit], check=True)
-
-
 def acquire_window_lock(path: Path) -> int:
     descriptor = os.open(path, os.O_WRONLY | os.O_CREAT, 0o600)
     try:
@@ -461,6 +612,11 @@ def validate_broker_config(config: BrokerConfig) -> None:
         raise WindowError("the configured server-config repository is unavailable")
     if config.repo.stat().st_uid != config.uid:
         raise WindowError("the configured server-config repository has an unexpected owner")
+    if not config.supervisor_config.is_absolute() or not config.supervisor_config.is_file():
+        raise WindowError("the configured Citadel Supervisor file is unavailable")
+    runtime_parent = config.socket_path.parent
+    if any(path.parent != runtime_parent for path in (config.active_path, config.suspended_state_path)):
+        raise WindowError("maintenance-window runtime paths must share one directory")
 
 
 def run_daemon(config: BrokerConfig) -> int:
@@ -468,34 +624,37 @@ def run_daemon(config: BrokerConfig) -> int:
     deadline = time.monotonic() + config.authorization.seconds
     stop_requested = False
     lock_descriptor = acquire_window_lock(config.lock_path)
+    listener: socket.socket | None = None
+    restore_error: str | None = None
+    restore_failures: list[str] = []
 
     config.socket_path.parent.mkdir(mode=0o750, parents=True, exist_ok=True)
-    if config.socket_path.exists() or config.socket_path.is_symlink():
-        config.socket_path.unlink()
+    for path in (config.socket_path, config.active_path):
+        if path.exists() or path.is_symlink():
+            path.unlink()
 
-    listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    listener.bind(str(config.socket_path))
-    os.chown(config.socket_path, 0, config.gid)
-    os.chmod(config.socket_path, 0o660)
-    listener.listen(4)
-    listener.settimeout(1)
-    signal.signal(signal.SIGTERM, lambda _signum, _frame: listener.close())
-    signal.signal(signal.SIGINT, lambda _signum, _frame: listener.close())
-    audit(
-        config.log_dir,
-        "window-open",
-        seconds=config.authorization.seconds,
-        sensitive=config.authorization.allow_sensitive,
-        user=config.user,
-    )
-
-    last_controller_check = 0.0
     try:
+        mark_window(config, "opening")
+        suspended = suspend_supervisor_services(config)
+        listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        listener.bind(str(config.socket_path))
+        os.chown(config.socket_path, 0 if os.geteuid() == 0 else os.geteuid(), config.gid)
+        os.chmod(config.socket_path, 0o660)
+        listener.listen(4)
+        listener.settimeout(1)
+        mark_window(config, "open")
+        signal.signal(signal.SIGTERM, lambda _signum, _frame: listener.close())
+        signal.signal(signal.SIGINT, lambda _signum, _frame: listener.close())
+        audit(
+            config.log_dir,
+            "window-open",
+            seconds=config.authorization.seconds,
+            sensitive=config.authorization.allow_sensitive,
+            suspended=suspended,
+            user=config.user,
+        )
+
         while not stop_requested and time.monotonic() < deadline:
-            now = time.monotonic()
-            if now - last_controller_check >= 10:
-                ensure_controller_stopped(config.controller_unit)
-                last_controller_check = now
             try:
                 connection, _ = listener.accept()
             except socket.timeout:
@@ -519,40 +678,73 @@ def run_daemon(config: BrokerConfig) -> int:
                             "type": "result",
                             "ok": True,
                             "message": "open",
+                            "state": "open",
                             "remainingSeconds": remaining,
                             "allowSensitive": config.authorization.allow_sensitive,
                             "maxSeconds": MAX_SECONDS,
                         },
                     )
                 elif command == "close":
+                    mark_window(config, "closing")
                     send_message(connection, {"type": "result", "ok": True, "message": "closing"})
                     stop_requested = True
                 else:
                     success, message = run_convergence(config, deadline=deadline, connection=connection)
                     send_message(connection, {"type": "result", "ok": success, "message": message})
-                    if not success:
-                        stop_requested = True
     finally:
-        with contextlib.suppress(OSError):
-            listener.close()
+        if listener is not None:
+            with contextlib.suppress(OSError):
+                listener.close()
         with contextlib.suppress(FileNotFoundError):
             config.socket_path.unlink()
-        audit(config.log_dir, "window-close", expired=time.monotonic() >= deadline)
+        with contextlib.suppress(OSError):
+            mark_window(config, "restoring")
+        try:
+            restore_failures = restore_supervisor_services(config)
+        except WindowError as error:
+            restore_error = str(error)
+        with contextlib.suppress(FileNotFoundError):
+            config.active_path.unlink()
+        audit(
+            config.log_dir,
+            "window-close",
+            expired=time.monotonic() >= deadline,
+            restoreError=restore_error,
+            restoreFailures=restore_failures,
+        )
         os.close(lock_descriptor)
+    if restore_error:
+        raise WindowError(restore_error)
+    if restore_failures:
+        raise WindowError("cannot restore Citadel services: " + ", ".join(restore_failures))
     return 0
 
 
-def restore_controller(unit: str, lock_path: Path = LOCK_PATH) -> int:
+def restore_services_after_stop(
+    *,
+    user: str,
+    home: Path,
+    supervisor_config: Path,
+    state_path: Path,
+) -> int:
     if os.geteuid() != 0:
-        raise WindowError("controller restoration must run as root")
-    try:
-        descriptor = acquire_window_lock(lock_path)
-    except WindowError:
-        return 0
-    try:
-        subprocess.run([SYSTEMCTL, "start", unit], check=True)
-    finally:
-        os.close(descriptor)
+        raise WindowError("service restoration must run as root")
+    account = pwd.getpwnam(user)
+    if Path(account.pw_dir) != home:
+        raise WindowError("managed-user home does not match during service restoration")
+    config = BrokerConfig(
+        authorization=Authorization(seconds=MIN_MINUTES * 60, allow_sensitive=False),
+        user=user,
+        uid=account.pw_uid,
+        gid=account.pw_gid,
+        home=home,
+        repo=home,
+        supervisor_config=supervisor_config,
+        suspended_state_path=state_path,
+    )
+    failures = restore_supervisor_services(config)
+    if failures:
+        raise WindowError("cannot restore Citadel services: " + ", ".join(failures))
     return 0
 
 
@@ -593,11 +785,11 @@ def open_window(minutes: int, allow_sensitive: bool) -> int:
     authorization = authorization_for(minutes, allow_sensitive)
     if os.geteuid() != 0:
         raise WindowError("open the window with sudo")
-    if SOCKET_PATH.exists():
+    if SOCKET_PATH.exists() or ACTIVE_PATH.exists():
         raise WindowError("a server-config maintenance window is already open")
     unit = f"{WINDOW_UNIT_PREFIX}@{authorization.instance}.service"
     subprocess.run([SYSTEMCTL, "start", unit], check=True)
-    deadline = time.monotonic() + 10
+    deadline = time.monotonic() + min(authorization.seconds, 5 * 60)
     while time.monotonic() < deadline:
         if SOCKET_PATH.is_socket():
             status = request("status")
@@ -609,8 +801,10 @@ def open_window(minutes: int, allow_sensitive: bool) -> int:
                     else "Sensitive host-access changes are blocked."
                 )
                 print(scope_message)
-                print("Citadel remains stopped until the window closes.")
+                print("Citadel remains available while managed services are suspended.")
                 return 0
+        if subprocess.run([SYSTEMCTL, "is-active", "--quiet", unit], check=False).returncode != 0:
+            raise WindowError("maintenance-window service stopped before it became ready")
         time.sleep(0.1)
     subprocess.run([SYSTEMCTL, "stop", unit], check=False)
     raise WindowError("maintenance-window service did not become ready")
@@ -655,9 +849,11 @@ def parser() -> argparse.ArgumentParser:
     subparsers.add_parser("converge", help="validate, check, apply, verify, and diagnose")
     subparsers.add_parser("close", help="close the active window early")
 
-    restore_parser = subparsers.add_parser("restore-controller", help=argparse.SUPPRESS)
-    restore_parser.add_argument("--controller-unit", required=True)
-    restore_parser.add_argument("--lock", type=Path, default=LOCK_PATH)
+    restore_parser = subparsers.add_parser("restore-services", help=argparse.SUPPRESS)
+    restore_parser.add_argument("--user", required=True)
+    restore_parser.add_argument("--home", required=True, type=Path)
+    restore_parser.add_argument("--supervisor-config", required=True, type=Path)
+    restore_parser.add_argument("--state", required=True, type=Path)
 
     daemon_parser = subparsers.add_parser("daemon", help=argparse.SUPPRESS)
     daemon_parser.add_argument("--authorization", required=True)
@@ -666,10 +862,20 @@ def parser() -> argparse.ArgumentParser:
     daemon_parser.add_argument("--gid", required=True, type=int)
     daemon_parser.add_argument("--home", required=True, type=Path)
     daemon_parser.add_argument("--repo", required=True, type=Path)
-    daemon_parser.add_argument("--controller-unit", required=True)
+    daemon_parser.add_argument("--supervisor-config", required=True, type=Path)
     daemon_parser.add_argument("--socket", type=Path, default=SOCKET_PATH)
     daemon_parser.add_argument("--lock", type=Path, default=LOCK_PATH)
     daemon_parser.add_argument("--log-dir", type=Path, default=LOG_DIR)
+    daemon_parser.add_argument(
+        "--active-state",
+        type=Path,
+        default=ACTIVE_PATH,
+    )
+    daemon_parser.add_argument(
+        "--suspended-state",
+        type=Path,
+        default=SUSPENDED_STATE_PATH,
+    )
     return argument_parser
 
 
@@ -682,8 +888,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             return print_status()
         if arguments.command in {"close", "converge"}:
             return client_command(arguments.command)
-        if arguments.command == "restore-controller":
-            return restore_controller(arguments.controller_unit, arguments.lock)
+        if arguments.command == "restore-services":
+            return restore_services_after_stop(
+                user=arguments.user,
+                home=arguments.home,
+                supervisor_config=arguments.supervisor_config,
+                state_path=arguments.state,
+            )
         authorization = parse_authorization(arguments.authorization)
         config = BrokerConfig(
             authorization=authorization,
@@ -692,10 +903,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             gid=arguments.gid,
             home=arguments.home,
             repo=arguments.repo.resolve(),
-            controller_unit=arguments.controller_unit,
+            supervisor_config=arguments.supervisor_config,
             socket_path=arguments.socket,
             lock_path=arguments.lock,
             log_dir=arguments.log_dir,
+            active_path=arguments.active_state,
+            suspended_state_path=arguments.suspended_state,
         )
         return run_daemon(config)
     except (WindowError, subprocess.CalledProcessError) as error:
