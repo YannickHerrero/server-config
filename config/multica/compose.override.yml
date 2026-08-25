@@ -1,3 +1,4 @@
+---
 name: multica
 
 x-logging: &bounded-logging

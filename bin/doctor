@@ -11,6 +11,11 @@ EXPECTED_SWAP_PATH=$(awk '/^server_config_swap_path:/ {print $2}' "$ROOT_DIR/gro
 EXPECTED_MOSH_PORT_RANGE=$(awk -F'"' '/^server_config_mosh_port_range:/ {print $2}' "$ROOT_DIR/group_vars/all.yml")
 EXPECTED_CITADEL_ENABLED=$(awk '/^server_config_citadel_enabled:/ {print $2}' "$ROOT_DIR/group_vars/all.yml")
 EXPECTED_CITADEL_PORT=$(awk '/^server_config_citadel_port:/ {print $2}' "$ROOT_DIR/group_vars/all.yml")
+EXPECTED_DOCKER_VERSION=$(awk -F'"' '/^server_config_docker_version:/ {print $2}' "$ROOT_DIR/group_vars/all.yml")
+EXPECTED_MULTICA_ENABLED=$(awk '/^server_config_multica_enabled:/ {print $2}' "$ROOT_DIR/group_vars/all.yml")
+EXPECTED_MULTICA_VERSION=$(awk -F'"' '/^server_config_multica_version:/ {print $2}' "$ROOT_DIR/group_vars/all.yml")
+EXPECTED_MULTICA_PORT=$(awk '/^server_config_multica_port:/ {print $2}' "$ROOT_DIR/group_vars/all.yml")
+EXPECTED_ANDROID_ENABLED=$(awk '/^server_config_android_enabled:/ {print $2}' "$ROOT_DIR/group_vars/all.yml")
 EXPECTED_MAINTENANCE_WINDOW_MAX=$(awk '/^server_config_maintenance_window_max_minutes:/ {print $2}' "$ROOT_DIR/group_vars/all.yml")
 MAINTENANCE_WINDOW_SOCKET=/run/server-config-maintenance-window/window.sock
 MAINTENANCE_WINDOW_BINARY=/usr/local/bin/server-config-window
@@ -312,6 +317,156 @@ if [[ -e $pi_auth_file ]]; then
     fi
 else
     warn "Pi is not authenticated yet; run pi and then /login"
+fi
+
+if [[ $EXPECTED_MULTICA_ENABLED == true ]]; then
+    section "Rootless Docker"
+    docker_binary=/usr/local/bin/docker
+    managed_docker_socket="unix:///run/server-config-docker/$USER/docker.sock"
+    if [[ -x $docker_binary ]]; then
+        installed_docker_version=$($docker_binary --version)
+        printf 'Docker: %s\n' "$installed_docker_version"
+        if [[ $installed_docker_version == *"Docker version $EXPECTED_DOCKER_VERSION,"* ]]; then
+            pass "Docker matches the pinned version"
+        else
+            fail "Docker does not match the pinned version $EXPECTED_DOCKER_VERSION"
+        fi
+    else
+        fail "Docker is not installed at $docker_binary"
+    fi
+    for docker_user in "$USER" multica; do
+        unit="server-config-docker@$docker_user.service"
+        if systemctl is-enabled --quiet "$unit" && systemctl is-active --quiet "$unit"; then
+            pass "$unit is enabled and active"
+        else
+            fail "$unit is not enabled and active"
+        fi
+    done
+    if [[ -x $docker_binary ]] \
+        && docker_security=$(DOCKER_HOST="$managed_docker_socket" $docker_binary info --format '{{json .SecurityOptions}}' 2>/dev/null) \
+        && [[ $docker_security == *name=rootless* ]]; then
+        pass "the managed user's Docker daemon is rootless"
+    else
+        fail "the managed user's rootless Docker daemon is unavailable"
+    fi
+    if [[ -S /var/run/docker.sock ]]; then
+        fail "the rootful Docker socket exists"
+    else
+        pass "the rootful Docker socket is absent"
+    fi
+
+    section "Multica"
+    multica_binary=/usr/local/bin/multica
+    if [[ -x $multica_binary ]]; then
+        installed_multica_version=$($multica_binary version 2>/dev/null | head -1)
+        printf 'Multica: %s\n' "$installed_multica_version"
+        if [[ $installed_multica_version == *"$EXPECTED_MULTICA_VERSION"* ]]; then
+            pass "Multica matches the pinned version"
+        else
+            fail "Multica does not match the pinned version $EXPECTED_MULTICA_VERSION"
+        fi
+    else
+        fail "Multica is not installed at $multica_binary"
+    fi
+    if multica_groups=$(id -nG multica 2>/dev/null); then
+        if grep -Eq '(^| )kvm( |$)' <<<"$multica_groups"; then
+            pass "the Multica account can use KVM"
+        else
+            fail "the Multica account is not in the kvm group"
+        fi
+        if grep -Eq '(^| )(sudo|docker|lxd)( |$)' <<<"$multica_groups"; then
+            fail "the Multica account has a privileged group"
+        else
+            pass "the Multica account has no sudo, docker, or lxd group"
+        fi
+    else
+        fail "the dedicated Multica account is missing"
+    fi
+    if [[ -d /home/multica && $(stat -c '%a' /home/multica) == 750 ]]; then
+        pass "the Multica home is private"
+    else
+        fail "the Multica home is missing or does not use mode 0750"
+    fi
+    if systemctl is-enabled --quiet multica-project-sync.timer \
+        && systemctl is-active --quiet multica-project-sync.timer; then
+        pass "the Multica project synchronization timer is enabled and active"
+    else
+        fail "the Multica project synchronization timer is not active"
+    fi
+    expected_git_excludes=\~/.config/git/ignore
+    if git config --global --get core.excludesfile 2>/dev/null | grep -Fxq "$expected_git_excludes" \
+        && grep -Fxq '.multica/' "$HOME/.config/git/ignore" 2>/dev/null; then
+        pass "the managed user's global Git ignore excludes .multica"
+    else
+        fail "the managed user's global Git ignore does not exclude .multica"
+    fi
+
+    multica_profile=/home/multica/.multica/config.json
+    if [[ -f $multica_profile ]]; then
+        if [[ $(stat -c '%a' "$multica_profile") == 600 ]]; then
+            pass "the Multica profile permissions are 0600"
+        else
+            fail "the Multica profile permissions are not 0600"
+        fi
+        if systemctl is-enabled --quiet multica-daemon.service \
+            && systemctl is-active --quiet multica-daemon.service; then
+            pass "the Multica agent daemon is enabled and active"
+        else
+            fail "the authenticated Multica agent daemon is not active"
+        fi
+        if "$HOME/.local/bin/multica-server" health >/dev/null 2>&1; then
+            pass "the Multica private server is ready on localhost"
+            printf 'Private URL: Tailscale HTTPS port %s\n' "$EXPECTED_MULTICA_PORT"
+        else
+            fail "the authenticated Multica private server is not ready"
+        fi
+        if [[ -f /home/multica/.pi/multica/auth.json \
+            && $(stat -c '%a' /home/multica/.pi/multica/auth.json) == 600 ]]; then
+            pass "the isolated Pi profile is authenticated with mode 0600"
+        else
+            fail "the isolated Pi profile is not authenticated with mode 0600"
+        fi
+        if HOME=/home/multica /usr/sbin/runuser -u multica -- /usr/bin/env \
+            HOME=/home/multica PATH=/home/multica/.local/share/mise/shims:/home/multica/.local/bin:/usr/local/bin:/usr/bin:/bin \
+            gh auth status >/dev/null 2>&1; then
+            pass "the isolated GitHub CLI profile is authenticated"
+        else
+            fail "the isolated GitHub CLI profile is not authenticated"
+        fi
+    else
+        warn "Multica is provisioned but not authenticated; follow docs/multica.md"
+        if systemctl is-enabled --quiet multica-daemon.service; then
+            pass "the pending Multica daemon is enabled"
+        else
+            fail "the pending Multica daemon is not enabled"
+        fi
+    fi
+fi
+
+if [[ $EXPECTED_ANDROID_ENABLED == true ]]; then
+    section "Android QA"
+    for command_path in \
+        /opt/android-sdk/cmdline-tools/latest/bin/sdkmanager \
+        /opt/android-sdk/platform-tools/adb \
+        /opt/android-sdk/emulator/emulator \
+        /usr/local/bin/multica-android-emulator; do
+        if [[ -x $command_path ]]; then
+            pass "$command_path is installed"
+        else
+            fail "$command_path is missing"
+        fi
+    done
+    if java -version 2>&1 | head -1 | grep -q 'version "21'; then
+        pass "Java 21 is active"
+    else
+        fail "Java 21 is not active"
+    fi
+    android_avd=/home/multica/.android/avd/multica-api-35.avd/config.ini
+    if [[ -f $android_avd ]]; then
+        pass "the headless Android AVD is configured"
+    else
+        fail "the headless Android AVD is missing"
+    fi
 fi
 
 section "Maintenance window"

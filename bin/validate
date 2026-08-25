@@ -18,6 +18,7 @@ shellcheck install.sh bin/apply bin/check bin/converge bin/doctor bin/onboard bi
     files/multica-heavy-run tests/check-maintenance-window.sh
 zsh -n config/zsh/zshenv config/zsh/.zshrc config/zsh/*.zsh
 python3 -m json.tool config/pi/settings.desired.json >/dev/null
+python3 -m json.tool config/multica/pi-settings.json >/dev/null
 python3 -m json.tool config/nvim/lazy-lock.json >/dev/null
 test -x files/server-config-window
 test -x files/multica-bootstrap
@@ -37,7 +38,7 @@ python3 -m py_compile \
     tests/test_multica_project.py
 python3 -W error -m unittest discover -s tests -p 'test_*.py'
 ./tests/check-maintenance-window.sh
-python3 -c 'import tomllib; tomllib.load(open("config/herdr/config.toml", "rb")); tomllib.load(open("config/mise/config.toml", "rb")); tomllib.load(open("config/nvim/stylua.toml", "rb")); tomllib.load(open("config/ohmyposh/zen.toml", "rb")); tomllib.load(open("onboarding/Cargo.toml", "rb"))'
+python3 -c 'import tomllib; tomllib.load(open("config/herdr/config.toml", "rb")); tomllib.load(open("config/mise/config.toml", "rb")); tomllib.load(open("config/multica/mise.toml", "rb")); tomllib.load(open("config/nvim/stylua.toml", "rb")); tomllib.load(open("config/ohmyposh/zen.toml", "rb")); tomllib.load(open("onboarding/Cargo.toml", "rb"))'
 test -s onboarding/Cargo.lock
 if command -v cargo >/dev/null 2>&1; then
     cargo fmt --manifest-path onboarding/Cargo.toml --check
@@ -66,6 +67,31 @@ for path in skills:
     assert body.strip(), f"{path} has no instructions"
 PY
 python3 - <<'PY'
+from pathlib import Path
+import re
+import yaml
+
+variables = Path("group_vars/all.yml").read_text()
+version_match = re.search(r'^server_config_multica_version: "([^"]+)"$', variables, re.MULTILINE)
+assert version_match, "Multica version is missing"
+version = version_match.group(1)
+compose = yaml.safe_load(Path("config/multica/compose.override.yml").read_text())
+assert compose["services"]["backend"]["image"].endswith(f":v{version}"), "backend image version drift"
+assert compose["services"]["frontend"]["image"].endswith(f":v{version}"), "frontend image version drift"
+assert compose["services"]["proxy"]["ports"] == ["127.0.0.1:4180:4180"], "proxy must stay on loopback"
+
+agent_root = Path("config/multica/agents")
+assert sorted(path.name for path in agent_root.glob("*.md")) == [
+    "common.md", "giselle.md", "karina.md", "ningning.md", "winter.md"
+], "unexpected Multica agent instruction files"
+for path in agent_root.glob("*.md"):
+    content = path.read_text()
+    assert content.strip(), f"{path} is empty"
+    assert "--no-context-files" not in content, f"{path} disables the Multica runtime brief"
+    assert "--no-skills" not in content, f"{path} disables Multica skills"
+PY
+systemd-analyze calendar '*-*-* 08:00:00 Europe/Paris' '*-*-* 20:00:00 Europe/Paris' >/dev/null
+python3 - <<'PY'
 import os
 from pathlib import Path
 import subprocess
@@ -82,7 +108,7 @@ if identity.exists():
     ).stdout.splitlines()
     assert sorted(keys) == ["user.email", "user.name"], "local Git identity has unexpected keys"
 PY
-yamllint .ansible-lint .yamllint group_vars/all.yml inventory/localhost.yml playbook.yml
+yamllint .ansible-lint .yamllint config/multica/compose.override.yml group_vars/all.yml inventory/localhost.yml playbook.yml tasks/*.yml
 ansible-playbook --syntax-check playbook.yml
 ansible-lint playbook.yml
 
