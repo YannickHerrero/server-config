@@ -20,6 +20,7 @@ zsh -n config/zsh/zshenv config/zsh/.zshrc config/zsh/*.zsh
 python3 -m json.tool config/pi/settings.desired.json >/dev/null
 python3 -m json.tool config/nvim/lazy-lock.json >/dev/null
 test -x files/server-config-window
+test -x files/multica-bootstrap
 test -x files/multica-heavy-run
 test -x files/multica-project-config
 test -x files/multica-project-sync
@@ -27,6 +28,7 @@ test -x files/multica-run
 test -x tests/check-maintenance-window.sh
 python3 -m py_compile \
     files/server-config-window \
+    files/multica-bootstrap \
     files/multica-project-config \
     files/multica-project-sync \
     files/multica-run \

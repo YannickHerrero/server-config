@@ -1,0 +1,265 @@
+#!/usr/bin/env python3
+"""Create or update the Dev workspace and its four isolated Pi agents."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+from pathlib import Path
+import sys
+from typing import Any, Sequence
+
+sys.path.insert(0, "/usr/local/lib/server-config")
+
+from multica_project import ProjectError, run
+
+CUSTOM_ARGS = ["--approve", "--no-extensions", "--no-prompt-templates", "--no-themes"]
+AGENTS = [
+    {
+        "name": "Karina",
+        "description": "Product manager and autonomous workflow orchestrator",
+        "concurrency": 2,
+        "instructions": "karina.md",
+    },
+    {
+        "name": "Giselle",
+        "description": "Full-stack developer responsible for implementation and pull requests",
+        "concurrency": 1,
+        "instructions": "giselle.md",
+    },
+    {
+        "name": "Winter",
+        "description": "Web and Android QA reviewer",
+        "concurrency": 1,
+        "instructions": "winter.md",
+    },
+    {
+        "name": "Ningning",
+        "description": "Deployment and post-release verification operator",
+        "concurrency": 1,
+        "instructions": "ningning.md",
+    },
+]
+WORKSPACE_CONTEXT = """Private development workspace for Yannick's repositories.
+The delivery order is Karina -> Giselle -> Winter -> Giselle -> Ningning.
+Project-local policy and repository instructions override general workflow defaults.
+An issue reaches done only after deployment verification."""
+
+
+def cli_json(arguments: Sequence[str]) -> Any:
+    result = run([os.environ.get("MULTICA_CLI", "multica"), *arguments])
+    try:
+        return json.loads(result.stdout)
+    except json.JSONDecodeError as error:
+        raise ProjectError(f"Multica returned invalid JSON for {' '.join(arguments)}") from error
+
+
+def ensure_workspace() -> dict[str, Any]:
+    workspaces = cli_json(["workspace", "list", "--output", "json"])
+    if not isinstance(workspaces, list):
+        raise ProjectError("workspace list returned an object")
+    matches = [workspace for workspace in workspaces if workspace.get("slug") == "dev"]
+    if len(matches) > 1:
+        raise ProjectError("more than one workspace uses the dev slug")
+    if matches:
+        workspace = matches[0]
+    else:
+        workspace = cli_json(
+            [
+                "workspace",
+                "create",
+                "--name",
+                "Dev",
+                "--slug",
+                "dev",
+                "--issue-prefix",
+                "DEV",
+                "--description",
+                "Private autonomous software delivery workspace",
+                "--context",
+                WORKSPACE_CONTEXT,
+                "--output",
+                "json",
+            ]
+        )
+    if not isinstance(workspace, dict) or not workspace.get("id"):
+        raise ProjectError("Dev workspace has no id")
+    run([os.environ.get("MULTICA_CLI", "multica"), "workspace", "switch", str(workspace["id"])])
+
+    details = cli_json(["workspace", "get", str(workspace["id"]), "--output", "json"])
+    if not isinstance(details, dict):
+        raise ProjectError("workspace get returned a list")
+    changes: list[str] = []
+    if details.get("name") != "Dev":
+        changes.extend(["--name", "Dev"])
+    if details.get("issue_prefix") != "DEV":
+        changes.extend(["--issue-prefix", "DEV"])
+    if details.get("context") != WORKSPACE_CONTEXT:
+        changes.extend(["--context", WORKSPACE_CONTEXT])
+    if changes:
+        details = cli_json(
+            [
+                "workspace",
+                "update",
+                str(workspace["id"]),
+                *changes,
+                "--output",
+                "json",
+            ]
+        )
+    return details
+
+
+def select_runtime(runtimes: Any, requested: str = "") -> dict[str, Any]:
+    if not isinstance(runtimes, list):
+        raise ProjectError("runtime list returned an object")
+    if requested:
+        matches = [runtime for runtime in runtimes if runtime.get("id") == requested]
+    else:
+        matches = [
+            runtime
+            for runtime in runtimes
+            if runtime.get("provider") == "pi" and runtime.get("status") == "online"
+        ]
+        preferred = [runtime for runtime in matches if runtime.get("name") == "Pi isolated"]
+        if len(preferred) == 1:
+            matches = preferred
+    if len(matches) != 1:
+        ids = ", ".join(str(runtime.get("id", "?")) for runtime in matches) or "none"
+        raise ProjectError(
+            f"expected one online isolated Pi runtime, found {len(matches)} ({ids}); pass --runtime-id"
+        )
+    return matches[0]
+
+
+def read_instructions(directory: Path, role_file: str) -> str:
+    try:
+        common = (directory / "common.md").read_text(encoding="utf-8").strip()
+        role = (directory / role_file).read_text(encoding="utf-8").strip()
+    except OSError as error:
+        raise ProjectError(f"cannot read agent instructions: {error}") from error
+    if not common or not role:
+        raise ProjectError("agent instruction files must not be empty")
+    return f"{common}\n\n{role}\n"
+
+
+def desired_agent(specification: dict[str, Any], runtime_id: str, directory: Path) -> dict[str, Any]:
+    return {
+        "description": specification["description"],
+        "instructions": read_instructions(directory, specification["instructions"]),
+        "runtime_id": runtime_id,
+        "custom_args": CUSTOM_ARGS,
+        "max_concurrent_tasks": specification["concurrency"],
+    }
+
+
+def update_arguments(agent: dict[str, Any], desired: dict[str, Any]) -> list[str]:
+    arguments: list[str] = []
+    flags = {
+        "description": "--description",
+        "instructions": "--instructions",
+        "runtime_id": "--runtime-id",
+        "max_concurrent_tasks": "--max-concurrent-tasks",
+    }
+    for field, flag in flags.items():
+        if agent.get(field) != desired[field]:
+            arguments.extend([flag, str(desired[field])])
+    if agent.get("custom_args") != desired["custom_args"]:
+        arguments.extend(["--custom-args", json.dumps(desired["custom_args"])])
+    return arguments
+
+
+def ensure_agents(runtime_id: str, directory: Path) -> list[dict[str, Any]]:
+    existing = cli_json(["agent", "list", "--include-archived", "--output", "json"])
+    if not isinstance(existing, list):
+        raise ProjectError("agent list returned an object")
+    by_name: dict[str, dict[str, Any]] = {}
+    for agent in existing:
+        name = str(agent.get("name", ""))
+        if name in by_name:
+            raise ProjectError(f"duplicate agent name: {name}")
+        by_name[name] = agent
+
+    results: list[dict[str, Any]] = []
+    for specification in AGENTS:
+        name = specification["name"]
+        desired = desired_agent(specification, runtime_id, directory)
+        agent = by_name.get(name)
+        if agent is None:
+            agent = cli_json(
+                [
+                    "agent",
+                    "create",
+                    "--name",
+                    name,
+                    "--runtime-id",
+                    runtime_id,
+                    "--description",
+                    desired["description"],
+                    "--instructions",
+                    desired["instructions"],
+                    "--custom-args",
+                    json.dumps(desired["custom_args"]),
+                    "--max-concurrent-tasks",
+                    str(desired["max_concurrent_tasks"]),
+                    "--output",
+                    "json",
+                ]
+            )
+            print(f"agent: created {name}")
+        else:
+            agent_id = str(agent.get("id", ""))
+            if not agent_id:
+                raise ProjectError(f"agent {name} has no id")
+            if agent.get("archived_at") is not None or agent.get("status") == "archived":
+                cli_json(["agent", "restore", agent_id, "--output", "json"])
+            details = cli_json(["agent", "get", agent_id, "--output", "json"])
+            arguments = update_arguments(details, desired)
+            if arguments:
+                agent = cli_json(
+                    ["agent", "update", agent_id, *arguments, "--output", "json"]
+                )
+                print(f"agent: updated {name}")
+            else:
+                agent = details
+                print(f"agent: unchanged {name}")
+        if not isinstance(agent, dict):
+            raise ProjectError(f"agent operation returned a list for {name}")
+        results.append(agent)
+    return results
+
+
+def parser() -> argparse.ArgumentParser:
+    arguments = argparse.ArgumentParser(description=__doc__)
+    arguments.add_argument("--runtime-id", default="")
+    arguments.add_argument(
+        "--instructions-dir",
+        type=Path,
+        default=Path("/usr/local/share/server-config/multica/agents"),
+    )
+    arguments.add_argument("--no-sync", action="store_true")
+    return arguments
+
+
+def main() -> int:
+    arguments = parser().parse_args()
+    try:
+        workspace = ensure_workspace()
+        runtimes = cli_json(["runtime", "list", "--output", "json"])
+        runtime = select_runtime(runtimes, arguments.runtime_id)
+        agents = ensure_agents(str(runtime["id"]), arguments.instructions_dir)
+        if not arguments.no_sync:
+            run(["multica-project-sync"])
+        print(
+            f"workspace {workspace.get('name')} ready with runtime {runtime.get('id')} "
+            f"and {len(agents)} agents"
+        )
+        return 0
+    except ProjectError as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

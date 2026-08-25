@@ -35,6 +35,55 @@ def load_script(name: str, module_name: str):
 
 sync = load_script("multica-project-sync", "multica_project_sync")
 config = load_script("multica-project-config", "multica_project_config")
+bootstrap = load_script("multica-bootstrap", "multica_bootstrap")
+
+
+class MulticaBootstrapTests(unittest.TestCase):
+    def test_runtime_selection_prefers_the_named_isolated_pi_runtime(self) -> None:
+        runtimes = [
+            {"id": "other", "provider": "pi", "status": "online", "name": "Pi"},
+            {
+                "id": "isolated",
+                "provider": "pi",
+                "status": "online",
+                "name": "Pi isolated",
+            },
+        ]
+        self.assertEqual(bootstrap.select_runtime(runtimes)["id"], "isolated")
+
+    def test_runtime_selection_refuses_an_ambiguous_machine(self) -> None:
+        runtimes = [
+            {"id": "one", "provider": "pi", "status": "online", "name": "Pi"},
+            {"id": "two", "provider": "pi", "status": "online", "name": "Pi"},
+        ]
+        with self.assertRaisesRegex(project.ProjectError, "pass --runtime-id"):
+            bootstrap.select_runtime(runtimes)
+        self.assertEqual(bootstrap.select_runtime(runtimes, "two")["id"], "two")
+
+    def test_agent_update_changes_only_drifted_fields(self) -> None:
+        desired = {
+            "description": "role",
+            "instructions": "instructions",
+            "runtime_id": "runtime",
+            "custom_args": bootstrap.CUSTOM_ARGS,
+            "max_concurrent_tasks": 1,
+        }
+        self.assertEqual(bootstrap.update_arguments(desired, desired), [])
+        current = {**desired, "max_concurrent_tasks": 6, "custom_args": []}
+        arguments = bootstrap.update_arguments(current, desired)
+        self.assertIn("--max-concurrent-tasks", arguments)
+        self.assertIn("--custom-args", arguments)
+
+    def test_all_agent_instruction_files_include_the_common_safety_policy(self) -> None:
+        directory = ROOT / "config/multica/agents"
+        for specification in bootstrap.AGENTS:
+            instructions = bootstrap.read_instructions(
+                directory, specification["instructions"]
+            )
+            self.assertIn("Ne committe jamais `.multica/`", instructions)
+            self.assertIn("multica-heavy-run", instructions)
+            self.assertNotIn("--no-context-files", instructions)
+            self.assertNotIn("--no-skills", instructions)
 
 
 class MulticaProcessTests(unittest.TestCase):

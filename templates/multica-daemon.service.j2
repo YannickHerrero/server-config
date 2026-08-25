@@ -15,6 +15,8 @@ Environment=PATH={{ server_config_multica_home }}/.local/share/mise/shims:{{ ser
 Environment=PI_CODING_AGENT_DIR={{ server_config_multica_pi_dir }}
 Environment=MULTICA_PI_PATH={{ server_config_multica_home }}/.local/bin/pi
 Environment=MULTICA_WORKSPACES_ROOT={{ server_config_multica_agent_workspaces }}
+Environment=MULTICA_DAEMON_DEVICE_NAME={{ ansible_hostname }}-multica
+Environment="MULTICA_AGENT_RUNTIME_NAME=Pi isolated"
 Environment=MULTICA_DAEMON_MAX_CONCURRENT_TASKS={{ server_config_multica_daemon_max_tasks }}
 Environment=MULTICA_DAEMON_AUTO_UPDATE=false
 Environment=MULTICA_DAEMON_AUTO_RELOAD=false

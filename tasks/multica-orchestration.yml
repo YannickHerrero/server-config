@@ -37,6 +37,38 @@
   tags:
     - multica
 
+- name: Create the Multica agent instruction directory
+  become: true
+  become_user: root
+  when: server_config_multica_enabled
+  ansible.builtin.file:
+    path: /usr/local/share/server-config/multica/agents
+    owner: root
+    group: root
+    mode: "0755"
+    state: directory
+  tags:
+    - multica
+
+- name: Install the Multica agent instructions
+  become: true
+  become_user: root
+  when: server_config_multica_enabled
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/config/multica/agents/{{ item }}"
+    dest: "/usr/local/share/server-config/multica/agents/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - common.md
+    - giselle.md
+    - karina.md
+    - ningning.md
+    - winter.md
+  tags:
+    - multica
+
 - name: Install the Multica project commands
   become: true
   become_user: root
@@ -48,6 +80,7 @@
     group: root
     mode: "0755"
   loop:
+    - multica-bootstrap
     - multica-heavy-run
     - multica-project-config
     - multica-project-sync
