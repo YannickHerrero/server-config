@@ -418,6 +418,11 @@
         - access
         - tailscale
 
+    - name: Configure the private Multica server
+      ansible.builtin.import_tasks: tasks/multica-server.yml
+      tags:
+        - multica
+
     - name: Install Mosh for private remote sessions
       become: true
       become_user: root

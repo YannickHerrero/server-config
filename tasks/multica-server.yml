@@ -1,0 +1,230 @@
+---
+- name: Derive the private Multica origin from Tailscale DNS
+  when: server_config_multica_enabled
+  ansible.builtin.set_fact:
+    server_config_multica_public_origin: >-
+      https://{{
+        server_config_tailscale_status.Self.DNSName | regex_replace('[.]$', '')
+      }}:{{ server_config_multica_port }}
+  tags:
+    - multica
+
+- name: Require a Tailscale DNS name for Multica
+  when: server_config_multica_enabled
+  ansible.builtin.assert:
+    that:
+      - server_config_tailscale_status.Self.DNSName | default('') | length > 1
+    fail_msg: Multica needs this node's Tailscale DNS name for its private HTTPS origin.
+    quiet: true
+  tags:
+    - multica
+
+- name: Create private Multica server directories
+  when: server_config_multica_enabled
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    owner: "{{ ansible_user_id }}"
+    group: "{{ ansible_user_gid }}"
+    mode: "{{ item.mode }}"
+    state: directory
+  loop:
+    - path: "{{ ansible_user_dir }}/.config/multica"
+      mode: "0700"
+    - path: "{{ ansible_user_dir }}/.local/share/multica"
+      mode: "0700"
+    - path: "{{ ansible_user_dir }}/.local/state/multica/backups"
+      mode: "0700"
+  tags:
+    - multica
+
+- name: Check out the pinned Multica server source
+  when: server_config_multica_enabled
+  ansible.builtin.git:
+    repo: "{{ server_config_multica_git_url }}"
+    dest: "{{ server_config_multica_repo_dir }}"
+    version: "{{ server_config_multica_git_commit }}"
+    single_branch: true
+    force: false
+    update: true
+  tags:
+    - multica
+
+- name: Read the Multica server checkout revision
+  when: server_config_multica_enabled
+  ansible.builtin.command:
+    argv:
+      - git
+      - -C
+      - "{{ server_config_multica_repo_dir }}"
+      - rev-parse
+      - HEAD
+  register: server_config_multica_server_revision
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  tags:
+    - multica
+
+- name: Verify the Multica server checkout revision
+  when:
+    - server_config_multica_enabled
+    - not ansible_check_mode or server_config_multica_server_revision.rc == 0
+  ansible.builtin.assert:
+    that:
+      - server_config_multica_server_revision.stdout == server_config_multica_git_commit
+    fail_msg: >-
+      The Multica checkout has an unexpected revision. Inspect local changes instead of overwriting them.
+    quiet: true
+  tags:
+    - multica
+
+- name: Create the Multica server runtime directory
+  when:
+    - server_config_multica_enabled
+    - not ansible_check_mode or server_config_multica_server_revision.rc == 0
+  ansible.builtin.file:
+    path: "{{ server_config_multica_repo_dir }}/runtime"
+    owner: "{{ ansible_user_id }}"
+    group: "{{ ansible_user_gid }}"
+    mode: "0700"
+    state: directory
+  tags:
+    - multica
+
+- name: Install the Multica Compose override
+  when:
+    - server_config_multica_enabled
+    - not ansible_check_mode or server_config_multica_server_revision.rc == 0
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/config/multica/compose.override.yml"
+    dest: "{{ server_config_multica_repo_dir }}/runtime/compose.override.yml"
+    owner: "{{ ansible_user_id }}"
+    group: "{{ ansible_user_gid }}"
+    mode: "0600"
+  tags:
+    - multica
+
+- name: Install the Multica private reverse proxy configuration
+  when:
+    - server_config_multica_enabled
+    - not ansible_check_mode or server_config_multica_server_revision.rc == 0
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/config/multica/Caddyfile"
+    dest: "{{ server_config_multica_repo_dir }}/runtime/Caddyfile"
+    owner: "{{ ansible_user_id }}"
+    group: "{{ ansible_user_gid }}"
+    mode: "0600"
+  tags:
+    - multica
+
+- name: Inspect the private Multica server environment
+  when: server_config_multica_enabled
+  ansible.builtin.stat:
+    path: "{{ server_config_multica_env_file }}"
+  register: server_config_multica_env
+  tags:
+    - multica
+
+- name: Generate the private Multica server secrets
+  when:
+    - server_config_multica_enabled
+    - not server_config_multica_env.stat.exists
+    - not ansible_check_mode
+  ansible.builtin.shell:
+    cmd: |
+      set -Eeuo pipefail
+      umask 077
+      temporary=$(mktemp '{{ ansible_user_dir }}/.config/multica/server.env.XXXXXX')
+      trap 'rm -f -- "$temporary"' EXIT
+      {
+          printf 'POSTGRES_PASSWORD=%s\n' "$(openssl rand -hex 32)"
+          printf 'JWT_SECRET=%s\n' "$(openssl rand -hex 32)"
+          printf 'MULTICA_VCS_SECRET_KEY=%s\n' "$(openssl rand -hex 32)"
+      } >"$temporary"
+      mv -- "$temporary" '{{ server_config_multica_env_file }}'
+      trap - EXIT
+    executable: /bin/bash
+    creates: "{{ server_config_multica_env_file }}"
+  no_log: true
+  tags:
+    - multica
+
+- name: Report the planned Multica secret generation
+  when:
+    - server_config_multica_enabled
+    - ansible_check_mode
+    - not server_config_multica_env.stat.exists
+  ansible.builtin.debug:
+    msg: Create the private Multica server environment with new random secrets
+  changed_when: true
+  tags:
+    - multica
+
+- name: Restrict the private Multica server environment
+  when:
+    - server_config_multica_enabled
+    - server_config_multica_env.stat.exists or not ansible_check_mode
+  ansible.builtin.file:
+    path: "{{ server_config_multica_env_file }}"
+    owner: "{{ ansible_user_id }}"
+    group: "{{ ansible_user_gid }}"
+    mode: "0600"
+    state: file
+  no_log: true
+  tags:
+    - multica
+
+- name: Configure the private Multica server environment
+  when:
+    - server_config_multica_enabled
+    - server_config_multica_env.stat.exists or not ansible_check_mode
+  ansible.builtin.blockinfile:
+    path: "{{ server_config_multica_env_file }}"
+    block: |-
+      POSTGRES_DB=multica
+      POSTGRES_USER=multica
+      MULTICA_IMAGE_TAG={{ server_config_multica_git_version }}
+      PORT={{ server_config_multica_backend_port }}
+      FRONTEND_PORT={{ server_config_multica_frontend_port }}
+      FRONTEND_ORIGIN={{ server_config_multica_public_origin }}
+      MULTICA_APP_URL={{ server_config_multica_public_origin }}
+      MULTICA_DAEMON_SERVER_URL={{ server_config_multica_public_origin }}
+      MULTICA_PUBLIC_URL=
+      CORS_ALLOWED_ORIGINS={{ server_config_multica_public_origin }}
+      APP_ENV=production
+      ALLOW_SIGNUP=true
+      MULTICA_ENTITLEMENT_POLICY_ENABLED=false
+      MULTICA_SUBSCRIPTION_CAPACITY_ENABLED=false
+      MULTICA_DAEMON_AUTO_UPDATE=false
+    marker: "# {mark} server-config Multica settings"
+    owner: "{{ ansible_user_id }}"
+    group: "{{ ansible_user_gid }}"
+    mode: "0600"
+  no_log: true
+  tags:
+    - multica
+
+- name: Install the Multica server operator command
+  when: server_config_multica_enabled
+  ansible.builtin.template:
+    src: multica-server.j2
+    dest: "{{ ansible_user_dir }}/.local/bin/multica-server"
+    owner: "{{ ansible_user_id }}"
+    group: "{{ ansible_user_gid }}"
+    mode: "0750"
+  tags:
+    - multica
+
+- name: Validate the resolved Multica Compose configuration
+  when:
+    - server_config_multica_enabled
+    - not ansible_check_mode
+  ansible.builtin.command:
+    argv:
+      - "{{ ansible_user_dir }}/.local/bin/multica-server"
+      - config
+  register: server_config_multica_compose_config
+  changed_when: false
+  no_log: true
+  tags:
+    - multica

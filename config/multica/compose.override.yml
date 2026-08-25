@@ -1,0 +1,32 @@
+name: multica
+
+x-logging: &bounded-logging
+  driver: local
+  options:
+    max-size: 10m
+    max-file: "5"
+
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.1-pg17
+    logging: *bounded-logging
+
+  backend:
+    image: ghcr.io/multica-ai/multica-backend:v0.4.34
+    logging: *bounded-logging
+
+  frontend:
+    image: ghcr.io/multica-ai/multica-web:v0.4.34
+    logging: *bounded-logging
+
+  proxy:
+    image: caddy:2.10.2-alpine
+    depends_on:
+      - backend
+      - frontend
+    ports:
+      - "127.0.0.1:4180:4180"
+    volumes:
+      - ./runtime/Caddyfile:/etc/caddy/Caddyfile:ro
+    logging: *bounded-logging
+    restart: unless-stopped
