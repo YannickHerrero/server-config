@@ -429,6 +429,14 @@
   tags:
     - multica
 
+- name: Inspect the Multica CLI profile
+  when: server_config_multica_enabled
+  ansible.builtin.stat:
+    path: "{{ server_config_multica_home }}/.multica/config.json"
+  register: server_config_multica_cli_profile
+  tags:
+    - multica
+
 - name: Enable the Multica daemon
   become: true
   become_user: root
@@ -439,6 +447,18 @@
     name: multica-daemon.service
     daemon_reload: true
     enabled: true
+  tags:
+    - multica
+
+- name: Start the authenticated Multica daemon
+  become: true
+  become_user: root
+  when:
+    - server_config_multica_enabled
+    - server_config_multica_cli_profile.stat.exists
+    - not ansible_check_mode or not server_config_multica_daemon_unit.changed
+  ansible.builtin.systemd_service:
+    name: multica-daemon.service
     state: started
   tags:
     - multica
