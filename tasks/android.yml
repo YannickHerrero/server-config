@@ -13,6 +13,22 @@
     - multica
     - packages
 
+- name: Inspect the pinned Android command-line tools
+  become: true
+  become_user: root
+  when:
+    - server_config_multica_enabled
+    - server_config_android_enabled
+  ansible.builtin.stat:
+    path: >-
+      {{ server_config_android_sdk_root }}/cmdline-tools/{{
+        server_config_android_commandline_tools_version
+      }}/cmdline-tools/bin/sdkmanager
+  register: server_config_android_commandline_tools
+  tags:
+    - android
+    - multica
+
 - name: Create the Android SDK directories
   become: true
   become_user: root
@@ -45,6 +61,7 @@
   when:
     - server_config_multica_enabled
     - server_config_android_enabled
+    - not ansible_check_mode or server_config_android_commandline_tools.stat.exists
   ansible.builtin.get_url:
     url: "{{ server_config_android_commandline_tools_url }}"
     dest: >-
@@ -63,6 +80,7 @@
   when:
     - server_config_multica_enabled
     - server_config_android_enabled
+    - not ansible_check_mode or server_config_android_commandline_tools.stat.exists
   ansible.builtin.unarchive:
     src: >-
       /var/cache/server-config/android-commandline-tools-{{ server_config_android_commandline_tools_version }}.zip
@@ -85,6 +103,7 @@
   when:
     - server_config_multica_enabled
     - server_config_android_enabled
+    - not ansible_check_mode or server_config_android_commandline_tools.stat.exists
   ansible.builtin.file:
     src: >-
       {{ server_config_android_sdk_root }}/cmdline-tools/{{
@@ -94,6 +113,21 @@
     owner: root
     group: root
     state: link
+  tags:
+    - android
+    - multica
+
+- name: Report the planned Android command-line tools installation
+  when:
+    - server_config_multica_enabled
+    - server_config_android_enabled
+    - ansible_check_mode
+    - not server_config_android_commandline_tools.stat.exists
+  ansible.builtin.debug:
+    msg: >-
+      Install Android command-line tools
+      {{ server_config_android_commandline_tools_version }}
+  changed_when: true
   tags:
     - android
     - multica

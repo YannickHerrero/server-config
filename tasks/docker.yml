@@ -10,6 +10,16 @@
     - multica
     - packages
 
+- name: Inspect the pinned Docker installation
+  become: true
+  become_user: root
+  ansible.builtin.stat:
+    path: "{{ server_config_docker_install_dir }}/dockerd"
+  register: server_config_docker_installed
+  tags:
+    - docker
+    - multica
+
 - name: Create the pinned Docker installation directories
   become: true
   become_user: root
@@ -35,6 +45,7 @@
 - name: Download the pinned Docker Engine archive
   become: true
   become_user: root
+  when: not ansible_check_mode or server_config_docker_installed.stat.exists
   ansible.builtin.get_url:
     url: "{{ server_config_docker_url }}"
     dest: "/var/cache/server-config/docker-{{ server_config_docker_version }}.tgz"
@@ -49,6 +60,7 @@
 - name: Extract the pinned Docker Engine
   become: true
   become_user: root
+  when: not ansible_check_mode or server_config_docker_installed.stat.exists
   ansible.builtin.unarchive:
     src: "/var/cache/server-config/docker-{{ server_config_docker_version }}.tgz"
     dest: "{{ server_config_docker_install_dir }}"
@@ -65,6 +77,7 @@
 - name: Download the pinned Docker rootless archive
   become: true
   become_user: root
+  when: not ansible_check_mode or server_config_docker_installed.stat.exists
   ansible.builtin.get_url:
     url: "{{ server_config_docker_rootless_url }}"
     dest: "/var/cache/server-config/docker-rootless-extras-{{ server_config_docker_version }}.tgz"
@@ -79,6 +92,7 @@
 - name: Extract the pinned Docker rootless tools
   become: true
   become_user: root
+  when: not ansible_check_mode or server_config_docker_installed.stat.exists
   ansible.builtin.unarchive:
     src: "/var/cache/server-config/docker-rootless-extras-{{ server_config_docker_version }}.tgz"
     dest: "{{ server_config_docker_install_dir }}"
@@ -95,6 +109,7 @@
 - name: Install the pinned Docker Compose plugin
   become: true
   become_user: root
+  when: not ansible_check_mode or server_config_docker_installed.stat.exists
   ansible.builtin.get_url:
     url: "{{ server_config_docker_compose_url }}"
     dest: >-
@@ -110,6 +125,7 @@
 - name: Select the pinned Docker Compose plugin
   become: true
   become_user: root
+  when: not ansible_check_mode or server_config_docker_installed.stat.exists
   ansible.builtin.file:
     src: "docker-compose-{{ server_config_docker_compose_version }}"
     dest: /usr/local/lib/docker/cli-plugins/docker-compose
@@ -123,6 +139,7 @@
 - name: Install the pinned Docker Buildx plugin
   become: true
   become_user: root
+  when: not ansible_check_mode or server_config_docker_installed.stat.exists
   ansible.builtin.get_url:
     url: "{{ server_config_docker_buildx_url }}"
     dest: >-
@@ -138,6 +155,7 @@
 - name: Select the pinned Docker Buildx plugin
   become: true
   become_user: root
+  when: not ansible_check_mode or server_config_docker_installed.stat.exists
   ansible.builtin.file:
     src: "docker-buildx-{{ server_config_docker_buildx_version }}"
     dest: /usr/local/lib/docker/cli-plugins/docker-buildx
@@ -151,12 +169,24 @@
 - name: Select the pinned Docker client
   become: true
   become_user: root
+  when: not ansible_check_mode or server_config_docker_installed.stat.exists
   ansible.builtin.file:
     src: "{{ server_config_docker_install_dir }}/docker"
     dest: /usr/local/bin/docker
     owner: root
     group: root
     state: link
+  tags:
+    - docker
+    - multica
+
+- name: Report the planned pinned Docker installation
+  when:
+    - ansible_check_mode
+    - not server_config_docker_installed.stat.exists
+  ansible.builtin.debug:
+    msg: "Install Docker {{ server_config_docker_version }} and its pinned plugins"
+  changed_when: true
   tags:
     - docker
     - multica
