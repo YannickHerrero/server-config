@@ -307,7 +307,7 @@
     state: directory
   loop:
     - path: "{{ ansible_user_dir }}/.local/share/docker"
-      mode: "0700"
+      mode: "0710"
     - path: "{{ ansible_user_dir }}/.local/state/multica"
       mode: "0700"
     - path: "{{ server_config_multica_pi_dir }}"

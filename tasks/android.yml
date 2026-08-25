@@ -252,6 +252,26 @@
     - android
     - multica
 
+- name: Normalize the Android SDK package permissions
+  become: true
+  become_user: root
+  when:
+    - server_config_multica_enabled
+    - server_config_android_enabled
+    - >-
+      not ansible_check_mode
+      or (server_config_android_package_paths.results | map(attribute='stat.exists') | min)
+  ansible.builtin.file:
+    path: "{{ server_config_android_sdk_root }}"
+    owner: root
+    group: root
+    mode: "u=rwX,go=rX"
+    recurse: true
+    state: directory
+  tags:
+    - android
+    - multica
+
 - name: Inspect the Multica Android virtual device
   become: true
   become_user: root
