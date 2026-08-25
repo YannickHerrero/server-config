@@ -9,7 +9,7 @@ Type=notify
 User=%i
 Environment=HOME=/home/%i
 Environment=XDG_RUNTIME_DIR={{ server_config_docker_runtime_dir }}/%i
-Environment=PATH={{ server_config_docker_install_dir }}:/usr/local/bin:/usr/bin:/bin
+Environment=PATH={{ server_config_docker_install_dir }}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 Environment=DOCKERD_ROOTLESS_ROOTLESSKIT_STATE_DIR={{ server_config_docker_runtime_dir }}/%i/rootlesskit
 Environment=DOCKERD_ROOTLESS_ROOTLESSKIT_NET=slirp4netns
 RuntimeDirectory=server-config-docker/%i
