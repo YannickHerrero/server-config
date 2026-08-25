@@ -1,0 +1,355 @@
+---
+- name: Install the headless Android host packages
+  become: true
+  become_user: root
+  when:
+    - server_config_multica_enabled
+    - server_config_android_enabled
+  ansible.builtin.apt:
+    name: "{{ server_config_android_host_packages }}"
+    state: present
+  tags:
+    - android
+    - multica
+    - packages
+
+- name: Create the Android SDK directories
+  become: true
+  become_user: root
+  when:
+    - server_config_multica_enabled
+    - server_config_android_enabled
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+    state: directory
+  loop:
+    - path: "{{ server_config_android_sdk_root }}"
+      mode: "0755"
+    - path: "{{ server_config_android_sdk_root }}/cmdline-tools"
+      mode: "0755"
+    - path: >-
+        {{ server_config_android_sdk_root }}/cmdline-tools/{{ server_config_android_commandline_tools_version }}
+      mode: "0755"
+    - path: /var/cache/server-config
+      mode: "0755"
+  tags:
+    - android
+    - multica
+
+- name: Download the pinned Android command-line tools
+  become: true
+  become_user: root
+  when:
+    - server_config_multica_enabled
+    - server_config_android_enabled
+  ansible.builtin.get_url:
+    url: "{{ server_config_android_commandline_tools_url }}"
+    dest: >-
+      /var/cache/server-config/android-commandline-tools-{{ server_config_android_commandline_tools_version }}.zip
+    checksum: "sha256:{{ server_config_android_commandline_tools_sha256 }}"
+    owner: root
+    group: root
+    mode: "0644"
+  tags:
+    - android
+    - multica
+
+- name: Extract the pinned Android command-line tools
+  become: true
+  become_user: root
+  when:
+    - server_config_multica_enabled
+    - server_config_android_enabled
+  ansible.builtin.unarchive:
+    src: >-
+      /var/cache/server-config/android-commandline-tools-{{ server_config_android_commandline_tools_version }}.zip
+    dest: >-
+      {{ server_config_android_sdk_root }}/cmdline-tools/{{ server_config_android_commandline_tools_version }}
+    remote_src: true
+    creates: >-
+      {{ server_config_android_sdk_root }}/cmdline-tools/{{
+        server_config_android_commandline_tools_version
+      }}/cmdline-tools/bin/sdkmanager
+    owner: root
+    group: root
+  tags:
+    - android
+    - multica
+
+- name: Select the pinned Android command-line tools
+  become: true
+  become_user: root
+  when:
+    - server_config_multica_enabled
+    - server_config_android_enabled
+  ansible.builtin.file:
+    src: >-
+      {{ server_config_android_sdk_root }}/cmdline-tools/{{
+        server_config_android_commandline_tools_version
+      }}/cmdline-tools
+    dest: "{{ server_config_android_sdk_root }}/cmdline-tools/latest"
+    owner: root
+    group: root
+    state: link
+  tags:
+    - android
+    - multica
+
+- name: Inspect Android SDK licenses
+  become: true
+  become_user: root
+  when:
+    - server_config_multica_enabled
+    - server_config_android_enabled
+  ansible.builtin.stat:
+    path: "{{ server_config_android_sdk_root }}/licenses/android-sdk-license"
+  register: server_config_android_license
+  tags:
+    - android
+    - multica
+
+- name: Accept Android SDK package licenses
+  become: true
+  become_user: root
+  when:
+    - server_config_multica_enabled
+    - server_config_android_enabled
+    - not server_config_android_license.stat.exists
+    - not ansible_check_mode
+  ansible.builtin.command:
+    argv:
+      - "{{ server_config_android_sdk_root }}/cmdline-tools/latest/bin/sdkmanager"
+      - "--sdk_root={{ server_config_android_sdk_root }}"
+      - --licenses
+    stdin: "{{ ('y\n' * 50) }}"
+  environment:
+    JAVA_HOME: /usr/lib/jvm/java-21-openjdk-amd64
+  changed_when: true
+  tags:
+    - android
+    - multica
+
+- name: Report the planned Android license acceptance
+  when:
+    - server_config_multica_enabled
+    - server_config_android_enabled
+    - ansible_check_mode
+    - not server_config_android_license.stat.exists
+  ansible.builtin.debug:
+    msg: Accept the Android SDK licenses required by the pinned QA packages
+  changed_when: true
+  tags:
+    - android
+    - multica
+
+- name: Inspect the pinned Android SDK packages
+  become: true
+  become_user: root
+  when:
+    - server_config_multica_enabled
+    - server_config_android_enabled
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - >-
+      {{ server_config_android_sdk_root }}/build-tools/{{
+        server_config_android_build_tools_version
+      }}/aapt2
+    - "{{ server_config_android_sdk_root }}/emulator/emulator"
+    - "{{ server_config_android_sdk_root }}/platform-tools/adb"
+    - >-
+      {{ server_config_android_sdk_root }}/platforms/android-{{
+        server_config_android_api_level
+      }}/android.jar
+    - >-
+      {{ server_config_android_sdk_root }}/system-images/android-{{
+        server_config_android_api_level
+      }}/google_apis/x86_64/package.xml
+  register: server_config_android_package_paths
+  tags:
+    - android
+    - multica
+
+- name: Install the pinned Android SDK packages
+  become: true
+  become_user: root
+  when:
+    - server_config_multica_enabled
+    - server_config_android_enabled
+    - not (server_config_android_package_paths.results | map(attribute='stat.exists') | min)
+    - not ansible_check_mode
+  ansible.builtin.command:
+    argv: >-
+      {{
+        [
+          server_config_android_sdk_root + '/cmdline-tools/latest/bin/sdkmanager',
+          '--sdk_root=' + server_config_android_sdk_root
+        ]
+        + server_config_android_packages
+      }}
+  environment:
+    JAVA_HOME: /usr/lib/jvm/java-21-openjdk-amd64
+  changed_when: true
+  tags:
+    - android
+    - multica
+
+- name: Inspect the Multica Android virtual device
+  become: true
+  become_user: root
+  when:
+    - server_config_multica_enabled
+    - server_config_android_enabled
+    - not ansible_check_mode or server_config_multica_account.rc == 0
+  ansible.builtin.stat:
+    path: >-
+      {{ server_config_multica_home }}/.android/avd/{{ server_config_android_avd_name }}.avd/config.ini
+  register: server_config_android_avd
+  tags:
+    - android
+    - multica
+
+- name: Create the Multica Android virtual device
+  become: true
+  become_user: root
+  when:
+    - server_config_multica_enabled
+    - server_config_android_enabled
+    - not ansible_check_mode
+    - not server_config_android_avd.stat.exists
+  ansible.builtin.command:
+    argv:
+      - /usr/sbin/runuser
+      - -u
+      - "{{ server_config_multica_user }}"
+      - --
+      - /usr/bin/env
+      - "HOME={{ server_config_multica_home }}"
+      - "ANDROID_HOME={{ server_config_android_sdk_root }}"
+      - "ANDROID_SDK_ROOT={{ server_config_android_sdk_root }}"
+      - "{{ server_config_android_sdk_root }}/cmdline-tools/latest/bin/avdmanager"
+      - create
+      - avd
+      - --name
+      - "{{ server_config_android_avd_name }}"
+      - --package
+      - "{{ server_config_android_system_image }}"
+      - --device
+      - pixel_6
+    stdin: "no\n"
+  changed_when: true
+  tags:
+    - android
+    - multica
+
+- name: Report the planned Multica Android virtual device
+  when:
+    - server_config_multica_enabled
+    - server_config_android_enabled
+    - ansible_check_mode
+    - >-
+      server_config_multica_account.rc != 0
+      or not server_config_android_avd.stat.exists
+  ansible.builtin.debug:
+    msg: "Create the {{ server_config_android_avd_name }} headless AVD"
+  changed_when: true
+  tags:
+    - android
+    - multica
+
+- name: Configure the Multica Android virtual device
+  become: true
+  become_user: root
+  when:
+    - server_config_multica_enabled
+    - server_config_android_enabled
+    - not ansible_check_mode or server_config_multica_account.rc == 0
+    - not ansible_check_mode or server_config_android_avd.stat.exists
+  ansible.builtin.blockinfile:
+    path: >-
+      {{ server_config_multica_home }}/.android/avd/{{ server_config_android_avd_name }}.avd/config.ini
+    block: |-
+      disk.dataPartition.size=4G
+      hw.audioInput=no
+      hw.audioOutput=no
+      hw.gpu.enabled=yes
+      hw.gpu.mode=swiftshader_indirect
+      hw.keyboard=yes
+      hw.ramSize=4096
+      snapshot.present=no
+    marker: "# {mark} server-config headless QA"
+    owner: "{{ server_config_multica_user }}"
+    group: "{{ server_config_multica_user }}"
+    mode: "0600"
+  tags:
+    - android
+    - multica
+
+- name: Install the Android emulator operator command
+  become: true
+  become_user: root
+  when:
+    - server_config_multica_enabled
+    - server_config_android_enabled
+  ansible.builtin.template:
+    src: multica-android-emulator.j2
+    dest: /usr/local/bin/multica-android-emulator
+    owner: root
+    group: root
+    mode: "0755"
+  tags:
+    - android
+    - multica
+
+- name: Verify the Android SDK package set
+  become: true
+  become_user: root
+  when:
+    - server_config_multica_enabled
+    - server_config_android_enabled
+    - not ansible_check_mode
+  ansible.builtin.command:
+    argv:
+      - "{{ server_config_android_sdk_root }}/cmdline-tools/latest/bin/sdkmanager"
+      - "--sdk_root={{ server_config_android_sdk_root }}"
+      - --list_installed
+  environment:
+    JAVA_HOME: /usr/lib/jvm/java-21-openjdk-amd64
+  register: server_config_android_installed_packages
+  changed_when: false
+  failed_when: >-
+    server_config_android_packages
+    | reject('in', server_config_android_installed_packages.stdout)
+    | list
+    | length > 0
+  tags:
+    - android
+    - multica
+
+- name: Verify the Multica Android virtual device
+  become: true
+  become_user: root
+  when:
+    - server_config_multica_enabled
+    - server_config_android_enabled
+    - not ansible_check_mode
+  ansible.builtin.command:
+    argv:
+      - /usr/sbin/runuser
+      - -u
+      - "{{ server_config_multica_user }}"
+      - --
+      - /usr/bin/env
+      - "HOME={{ server_config_multica_home }}"
+      - "ANDROID_HOME={{ server_config_android_sdk_root }}"
+      - "{{ server_config_android_sdk_root }}/emulator/emulator"
+      - -list-avds
+  register: server_config_android_avds
+  changed_when: false
+  failed_when: server_config_android_avd_name not in server_config_android_avds.stdout_lines
+  tags:
+    - android
+    - multica

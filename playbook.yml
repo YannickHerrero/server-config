@@ -71,6 +71,12 @@
       tags:
         - multica
 
+    - name: Configure headless Android QA
+      ansible.builtin.import_tasks: tasks/android.yml
+      tags:
+        - android
+        - multica
+
     - name: Set the timezone file
       become: true
       become_user: root

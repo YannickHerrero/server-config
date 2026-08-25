@@ -11,7 +11,7 @@ User={{ server_config_multica_user }}
 Group={{ server_config_multica_user }}
 WorkingDirectory={{ server_config_multica_home }}
 Environment=HOME={{ server_config_multica_home }}
-Environment=PATH={{ server_config_multica_home }}/.local/share/mise/shims:{{ server_config_multica_home }}/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=PATH={{ server_config_android_sdk_root }}/platform-tools:{{ server_config_android_sdk_root }}/emulator:{{ server_config_android_sdk_root }}/cmdline-tools/latest/bin:{{ server_config_multica_home }}/.local/share/mise/shims:{{ server_config_multica_home }}/.local/bin:/usr/local/bin:/usr/bin:/bin
 Environment=PI_CODING_AGENT_DIR={{ server_config_multica_pi_dir }}
 Environment=MULTICA_PI_PATH={{ server_config_multica_home }}/.local/bin/pi
 Environment=MULTICA_WORKSPACES_ROOT={{ server_config_multica_agent_workspaces }}

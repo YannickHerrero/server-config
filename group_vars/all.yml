@@ -106,6 +106,28 @@ server_config_multica_project_map: /home/multica/.local/state/multica/project-ma
 server_config_multica_mise_config: /home/multica/.config/mise/config.toml
 server_config_multica_pi_dir: /home/multica/.pi/multica
 
+server_config_android_enabled: true
+server_config_android_sdk_root: /opt/android-sdk
+server_config_android_commandline_tools_version: "23.0"
+server_config_android_commandline_tools_url: >-
+  https://dl.google.com/android/repository/commandlinetools-linux-16111833_latest.zip
+server_config_android_commandline_tools_sha256: 0877a1d048fe4a24efe2eff536ca4223f7adeb58648bb81909d33c446918cfa8
+server_config_android_api_level: "35"
+server_config_android_build_tools_version: "35.0.0"
+server_config_android_system_image: system-images;android-35;google_apis;x86_64
+server_config_android_avd_name: multica-api-35
+server_config_android_packages:
+  - "build-tools;{{ server_config_android_build_tools_version }}"
+  - emulator
+  - platform-tools
+  - "platforms;android-{{ server_config_android_api_level }}"
+  - "{{ server_config_android_system_image }}"
+server_config_android_host_packages:
+  - libgl1
+  - libpulse0
+  - libxkbcommon-x11-0
+  - openjdk-21-jdk-headless
+
 server_config_packages:
   - ansible-core
   - ansible-lint
