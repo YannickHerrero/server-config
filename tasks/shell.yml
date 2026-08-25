@@ -93,6 +93,7 @@
 
 - name: Select Zsh as the login shell
   become: true
+  become_user: root
   ansible.builtin.user:
     name: "{{ ansible_user_id }}"
     shell: /usr/bin/zsh

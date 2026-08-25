@@ -2,6 +2,8 @@
 - name: Converge the Ubuntu server base
   hosts: all
   gather_facts: true
+  become: "{{ server_config_maintenance_broker | bool }}"
+  become_user: "{{ server_config_managed_user }}"
 
   pre_tasks:
     - name: Require the supported Ubuntu release
@@ -27,6 +29,7 @@
   tasks:
     - name: Refresh the APT package index
       become: true
+      become_user: root
       ansible.builtin.apt:
         update_cache: true
         cache_valid_time: 3600
@@ -35,6 +38,7 @@
 
     - name: Install base administration packages
       become: true
+      become_user: root
       ansible.builtin.apt:
         name: "{{ server_config_packages }}"
         state: present
@@ -43,6 +47,7 @@
 
     - name: Install headless browser runtime packages
       become: true
+      become_user: root
       ansible.builtin.apt:
         name: "{{ server_config_headless_browser_packages }}"
         state: present
@@ -52,6 +57,7 @@
 
     - name: Set the timezone file
       become: true
+      become_user: root
       ansible.builtin.copy:
         content: "{{ server_config_timezone }}\n"
         dest: /etc/timezone
@@ -63,6 +69,7 @@
 
     - name: Link the system timezone
       become: true
+      become_user: root
       ansible.builtin.file:
         src: "/usr/share/zoneinfo/{{ server_config_timezone }}"
         dest: /etc/localtime
@@ -75,6 +82,7 @@
 
     - name: Configure periodic APT jobs
       become: true
+      become_user: root
       ansible.builtin.template:
         src: 20auto-upgrades.j2
         dest: /etc/apt/apt.conf.d/20auto-upgrades
@@ -86,6 +94,7 @@
 
     - name: Disable unattended automatic reboots
       become: true
+      become_user: root
       ansible.builtin.template:
         src: 52server-config-unattended-upgrades.j2
         dest: /etc/apt/apt.conf.d/52server-config-unattended-upgrades
@@ -97,6 +106,7 @@
 
     - name: Enable maintenance timers
       become: true
+      become_user: root
       ansible.builtin.systemd_service:
         name: "{{ item }}"
         enabled: true
@@ -133,6 +143,7 @@
 
     - name: Allocate the swap file
       become: true
+      become_user: root
       when:
         - server_config_swap_enabled
         - not server_config_swap_stat.stat.exists
@@ -148,6 +159,7 @@
 
     - name: Restrict swap file permissions
       become: true
+      become_user: root
       when:
         - server_config_swap_enabled
         - server_config_swap_stat.stat.exists or not ansible_check_mode
@@ -162,6 +174,7 @@
 
     - name: Inspect the swap file format
       become: true
+      become_user: root
       when: server_config_swap_enabled
       ansible.builtin.command:
         argv:
@@ -180,6 +193,7 @@
 
     - name: Format the swap file
       become: true
+      become_user: root
       when:
         - server_config_swap_enabled
         - server_config_swap_type.stdout != "swap"
@@ -193,6 +207,7 @@
 
     - name: Persist the swap file
       become: true
+      become_user: root
       when: server_config_swap_enabled
       ansible.builtin.lineinfile:
         path: /etc/fstab
@@ -220,6 +235,7 @@
 
     - name: Activate the swap file
       become: true
+      become_user: root
       when:
         - server_config_swap_enabled
         - server_config_swap_path not in server_config_active_swap.stdout_lines
@@ -284,6 +300,7 @@
 
     - name: Install the Tailscale archive key
       become: true
+      become_user: root
       ansible.builtin.get_url:
         url: "{{ server_config_tailscale_key_url }}"
         dest: /usr/share/keyrings/tailscale-archive-keyring.gpg
@@ -297,6 +314,7 @@
 
     - name: Configure the Tailscale APT repository
       become: true
+      become_user: root
       ansible.builtin.template:
         src: tailscale.list.j2
         dest: /etc/apt/sources.list.d/tailscale.list
@@ -309,6 +327,7 @@
 
     - name: Install Tailscale
       become: true
+      become_user: root
       ansible.builtin.apt:
         name: tailscale
         state: present
@@ -319,6 +338,7 @@
 
     - name: Enable the Tailscale service
       become: true
+      become_user: root
       ansible.builtin.systemd_service:
         name: tailscaled
         enabled: true
@@ -329,6 +349,7 @@
 
     - name: Remove the unused DNS server
       become: true
+      become_user: root
       ansible.builtin.apt:
         name: bind9
         state: absent
@@ -339,6 +360,7 @@
 
     - name: Read the Tailscale state
       become: true
+      become_user: root
       ansible.builtin.command:
         argv:
           - tailscale
@@ -387,6 +409,7 @@
 
     - name: Keep Tailscale SSH disabled
       become: true
+      become_user: root
       ansible.builtin.command:
         argv:
           - tailscale
@@ -399,6 +422,7 @@
 
     - name: Configure OpenSSH access
       become: true
+      become_user: root
       ansible.builtin.template:
         src: 00-server-config-sshd.conf.j2
         dest: /etc/ssh/sshd_config.d/00-server-config.conf
@@ -413,6 +437,7 @@
 
     - name: Enable the OpenSSH socket
       become: true
+      become_user: root
       ansible.builtin.systemd_service:
         name: ssh.socket
         enabled: true
@@ -423,6 +448,7 @@
 
     - name: Read the effective OpenSSH configuration
       become: true
+      become_user: root
       ansible.builtin.command:
         argv:
           - /usr/sbin/sshd
@@ -455,6 +481,7 @@
 
     - name: Configure UFW default policies
       become: true
+      become_user: root
       ansible.builtin.lineinfile:
         path: /etc/default/ufw
         regexp: "^{{ item.key }}="
@@ -476,6 +503,7 @@
 
     - name: Allow OpenSSH only through Tailscale
       become: true
+      become_user: root
       ansible.builtin.command:
         argv:
           - ufw
@@ -499,6 +527,7 @@
 
     - name: Allow direct Tailscale transport
       become: true
+      become_user: root
       ansible.builtin.command:
         argv:
           - ufw
@@ -522,6 +551,7 @@
 
     - name: Read the configured UFW commands
       become: true
+      become_user: root
       ansible.builtin.command:
         argv:
           - ufw
@@ -536,6 +566,7 @@
 
     - name: Remove the temporary release-upgrade SSH rule
       become: true
+      become_user: root
       when: "'port 1022' in server_config_ufw_added.stdout"
       ansible.builtin.command:
         argv:
@@ -558,6 +589,7 @@
 
     - name: Read the UFW state
       become: true
+      become_user: root
       ansible.builtin.command:
         argv:
           - ufw
@@ -571,6 +603,7 @@
 
     - name: Enable UFW
       become: true
+      become_user: root
       when: "'Status: inactive' in server_config_ufw_status.stdout"
       ansible.builtin.command:
         argv:
@@ -584,6 +617,7 @@
 
     - name: Enable the UFW service
       become: true
+      become_user: root
       ansible.builtin.systemd_service:
         name: ufw
         enabled: true
@@ -600,6 +634,7 @@
 
     - name: Read the final UFW state
       become: true
+      become_user: root
       ansible.builtin.command:
         argv:
           - ufw
@@ -634,12 +669,14 @@
   handlers:
     - name: Reload OpenSSH
       become: true
+      become_user: root
       ansible.builtin.systemd_service:
         name: ssh
         state: reloaded
 
     - name: Reload UFW
       become: true
+      become_user: root
       ansible.builtin.command:
         argv:
           - ufw

@@ -295,6 +295,7 @@
 
 - name: Inspect legacy system Node links
   become: true
+  become_user: root
   ansible.builtin.stat:
     path: "/usr/local/bin/{{ item }}"
     follow: false
@@ -323,6 +324,7 @@
 
 - name: Remove legacy system Node links
   become: true
+  become_user: root
   ansible.builtin.file:
     path: "/usr/local/bin/{{ item }}"
     state: absent
@@ -337,6 +339,7 @@
 
 - name: Remove the legacy system Node installation
   become: true
+  become_user: root
   ansible.builtin.file:
     path: "{{ item }}"
     state: absent

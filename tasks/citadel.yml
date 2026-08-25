@@ -1,6 +1,7 @@
 ---
 - name: Install Citadel controller packages
   become: true
+  become_user: root
   when: server_config_citadel_enabled
   ansible.builtin.apt:
     name: "{{ server_config_citadel_packages }}"
@@ -56,6 +57,7 @@
 
 - name: Disable the distribution Supervisor daemon
   become: true
+  become_user: root
   when:
     - server_config_citadel_enabled
     - not ansible_check_mode or server_config_supervisor_unit.stat.exists
@@ -77,6 +79,7 @@
 
 - name: Install the Citadel systemd template
   become: true
+  become_user: root
   when: server_config_citadel_enabled
   ansible.builtin.template:
     src: citadel@.service.j2
@@ -100,6 +103,7 @@
 
 - name: Enable and start Citadel
   become: true
+  become_user: root
   when:
     - server_config_citadel_enabled
     - not ansible_check_mode or server_config_citadel_unit.stat.exists
