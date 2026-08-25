@@ -132,6 +132,11 @@ To inspect a remote host from a trusted control machine, create the ignored file
 
 - a small package set for administration and diagnostics
 - shared libraries and fonts for project-scoped Playwright Chromium headless tests
+- pinned rootless Docker Engine, Compose, and Buildx without a rootful socket
+- a private Multica self-host stack on Tailscale HTTPS port `8444`
+- an isolated `multica` account with dedicated Pi, GitHub, Docker, and project state
+- twice-daily Multica project synchronization in `Europe/Paris`
+- pinned Java and Android SDK tools with a KVM-backed headless API 35 AVD
 - daily Ubuntu security updates without automatic reboot
 - an 8 GiB swap file
 - weekly SSD TRIM
@@ -158,15 +163,17 @@ Browser tests use the Chromium headless shell pinned by each project's Playwrigh
 
 The playbook installs Supervisor, disables its distribution-wide daemon, and starts the private Citadel controller. Citadel owns application definitions, lifecycle, logs, health checks, and Tailscale Serve routes. Application repositories and Citadel runtime data remain outside `server-config`.
 
+Multica's server checkout and private environment live outside this repository. The tracked configuration pins its CLI, source commit, images, reverse proxy, daemon, Android runtime, agent instructions, helper commands, and timers. Follow [`docs/multica.md`](docs/multica.md) for the interactive logins and first activation.
+
 ## Not managed yet
 
 - Ubuntu release upgrades
 - tailnet policy, Tailscale authentication, key expiry, or passwordless sudo policy
-- Android SDK, emulator, Java, browsers, or Maestro
-- Docker
-- application repositories, Citadel's service catalog or routes, user data, torrents, or backups
-- Pi authentication, mutable state, sessions, extensions, prompts, packages, or themes
-- gh and Vercel authentication
+- Maestro or a system browser
+- application repositories, user data, torrents, or off-host backups
+- Multica, Pi, GitHub, Tailscale, or Android emulator sessions and credentials
+- tailnet policy and Citadel route activation
+- Vercel authentication
 
 Add these only after the server needs them.
 
