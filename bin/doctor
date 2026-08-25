@@ -352,6 +352,11 @@ if [[ $EXPECTED_MULTICA_ENABLED == true ]]; then
     else
         pass "the rootful Docker socket is absent"
     fi
+    if [[ -e /proc/sys/net/bridge/bridge-nf-call-iptables ]]; then
+        pass "bridge netfilter is available to Docker"
+    else
+        fail "bridge netfilter is unavailable to Docker"
+    fi
 
     section "Multica"
     multica_binary=/usr/local/bin/multica

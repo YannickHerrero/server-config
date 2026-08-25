@@ -10,6 +10,42 @@
     - multica
     - packages
 
+- name: Persist the bridge netfilter kernel module
+  become: true
+  become_user: root
+  ansible.builtin.copy:
+    content: "br_netfilter\n"
+    dest: /etc/modules-load.d/server-config-docker.conf
+    owner: root
+    group: root
+    mode: "0644"
+  tags:
+    - docker
+    - multica
+
+- name: Inspect the bridge netfilter kernel module
+  ansible.builtin.stat:
+    path: /sys/module/br_netfilter
+  register: server_config_docker_bridge_netfilter
+  tags:
+    - docker
+    - multica
+
+- name: Load the bridge netfilter kernel module
+  become: true
+  become_user: root
+  when:
+    - not ansible_check_mode
+    - not server_config_docker_bridge_netfilter.stat.exists
+  ansible.builtin.command:
+    argv:
+      - /usr/sbin/modprobe
+      - br_netfilter
+  changed_when: true
+  tags:
+    - docker
+    - multica
+
 - name: Inspect the pinned Docker installation
   become: true
   become_user: root
