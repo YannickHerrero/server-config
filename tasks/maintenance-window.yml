@@ -8,6 +8,7 @@
     - maintenance-window
 
 - name: Refuse to replace an active maintenance-window broker
+  when: not ansible_check_mode
   ansible.builtin.assert:
     that:
       - not server_config_maintenance_window_socket.stat.exists

@@ -235,6 +235,12 @@ class MaintenanceWindowTests(unittest.TestCase):
                 if line.strip() == "become: true":
                     self.assertEqual(lines[index + 1].strip(), "become_user: root", f"{path}:{index + 1}")
 
+    def test_active_window_guard_allows_read_only_check_mode(self):
+        content = (ROOT / "tasks/maintenance-window.yml").read_text()
+        guard = content.split("- name: Refuse to replace an active maintenance-window broker", 1)[1]
+        guard = guard.split("- name: Require a bounded maintenance-window duration", 1)[0]
+        self.assertIn("when: not ansible_check_mode", guard)
+
     def test_policy_does_not_install_passwordless_sudo(self):
         tracked_sources = [ROOT / "playbook.yml", *ROOT.glob("tasks/*.yml"), *ROOT.glob("templates/*")]
         combined = "\n".join(path.read_text() for path in tracked_sources)
