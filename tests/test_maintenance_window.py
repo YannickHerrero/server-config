@@ -202,6 +202,11 @@ class MaintenanceWindowTests(unittest.TestCase):
             finally:
                 os.close(descriptor)
 
+    def test_daemon_accepts_the_managed_user_and_root_opener(self):
+        self.assertTrue(window.peer_is_authorized(1000, 1000))
+        self.assertTrue(window.peer_is_authorized(0, 1000))
+        self.assertFalse(window.peer_is_authorized(1001, 1000))
+
     def test_client_streams_output_and_requires_a_final_result(self):
         with tempfile.TemporaryDirectory() as temporary:
             socket_path = Path(temporary) / "window.sock"
@@ -227,6 +232,25 @@ class MaintenanceWindowTests(unittest.TestCase):
             self.assertFalse(thread.is_alive())
             self.assertEqual(output.getvalue(), "checked\n")
             self.assertTrue(result["ok"])
+
+    def test_client_reports_a_reset_without_a_traceback(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            socket_path = Path(temporary) / "window.sock"
+            listener = window.socket.socket(window.socket.AF_UNIX, window.socket.SOCK_STREAM)
+            listener.bind(str(socket_path))
+            listener.listen(1)
+
+            def reset():
+                connection, _ = listener.accept()
+                connection.close()
+                listener.close()
+
+            thread = threading.Thread(target=reset)
+            thread.start()
+            with self.assertRaisesRegex(window.WindowError, "without a result"):
+                window.request("status", socket_path)
+            thread.join(timeout=2)
+            self.assertFalse(thread.is_alive())
 
     def test_every_privileged_ansible_task_names_root_explicitly(self):
         for path in [ROOT / "playbook.yml", *ROOT.glob("tasks/*.yml")]:

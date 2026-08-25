@@ -410,6 +410,10 @@ def peer_uid(connection: socket.socket) -> int:
     return uid
 
 
+def peer_is_authorized(uid: int, managed_uid: int) -> bool:
+    return uid in {0, managed_uid}
+
+
 def receive_request(connection: socket.socket) -> str:
     data = b""
     while b"\n" not in data and len(data) <= 4096:
@@ -499,7 +503,7 @@ def run_daemon(config: BrokerConfig) -> int:
             except OSError:
                 break
             with connection:
-                if peer_uid(connection) != config.uid:
+                if not peer_is_authorized(peer_uid(connection), config.uid):
                     send_message(connection, {"type": "result", "ok": False, "message": "unauthorized user"})
                     continue
                 try:
@@ -563,7 +567,10 @@ def request(command: str, socket_path: Path = SOCKET_PATH) -> dict[str, object]:
         buffer = b""
         result: dict[str, object] | None = None
         while True:
-            chunk = connection.recv(65536)
+            try:
+                chunk = connection.recv(65536)
+            except ConnectionResetError:
+                break
             if not chunk:
                 break
             buffer += chunk
