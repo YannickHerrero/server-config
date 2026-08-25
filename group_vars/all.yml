@@ -5,6 +5,7 @@ server_config_supported_architecture: x86_64
 server_config_timezone: Etc/UTC
 server_config_managed_user: "{{ lookup('env', 'USER') }}"
 server_config_maintenance_broker: false
+server_config_maintenance_window_max_minutes: 480
 server_config_repo_dir: "{{ ansible_user_dir }}/dev/server-config"
 
 server_config_mise_version: "2026.5.15"

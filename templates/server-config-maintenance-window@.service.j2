@@ -1,0 +1,29 @@
+[Unit]
+Description=Server-config maintenance window (%i)
+Documentation=file://{{ server_config_repo_dir }}/README.md
+After=citadel@{{ ansible_user_id }}.service
+
+[Service]
+Type=simple
+User=root
+Group={{ ansible_user_id }}
+ExecCondition=/usr/bin/systemctl is-active --quiet citadel@{{ ansible_user_id }}.service
+ExecStartPre=/usr/bin/systemctl stop citadel@{{ ansible_user_id }}.service
+ExecStart=/usr/local/bin/server-config-window daemon --authorization %i --user {{ ansible_user_id }} --uid {{ ansible_user_uid }} --gid {{ ansible_user_gid }} --home {{ ansible_user_dir }} --repo {{ server_config_repo_dir }} --controller-unit citadel@{{ ansible_user_id }}.service
+ExecStopPost=/usr/local/bin/server-config-window restore-controller --controller-unit citadel@{{ ansible_user_id }}.service
+RuntimeDirectory=server-config-maintenance-window
+RuntimeDirectoryMode=0750
+RuntimeDirectoryPreserve=no
+RuntimeMaxSec={{ server_config_maintenance_window_max_minutes }}m
+TimeoutStopSec=15
+KillMode=control-group
+UMask=0077
+LimitNOFILE=65536
+PrivateTmp=true
+ProtectClock=true
+ProtectControlGroups=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+RestrictRealtime=true
+LockPersonality=true

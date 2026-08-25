@@ -1,0 +1,700 @@
+#!/usr/bin/env python3
+"""Time-bounded broker for applying server-config without a persistent sudo grant."""
+
+from __future__ import annotations
+
+import argparse
+import contextlib
+import datetime as dt
+import fcntl
+import json
+import os
+from pathlib import Path
+import pwd
+import re
+import selectors
+import signal
+import socket
+import struct
+import subprocess
+import sys
+import time
+from dataclasses import dataclass
+from typing import Callable, Sequence
+
+MAX_MINUTES = 8 * 60
+MIN_MINUTES = 1
+DEFAULT_MINUTES = 30
+MAX_SECONDS = MAX_MINUTES * 60
+SOCKET_PATH = Path("/run/server-config-maintenance-window/window.sock")
+LOCK_PATH = Path("/run/server-config-maintenance-window.lock")
+LOG_DIR = Path("/var/log/server-config")
+SYSTEMCTL = "/usr/bin/systemctl"
+RUNUSER = "/usr/sbin/runuser"
+ENV = "/usr/bin/env"
+GIT = "/usr/bin/git"
+ANSIBLE_PLAYBOOK = "/usr/bin/ansible-playbook"
+WINDOW_UNIT_PREFIX = "server-config-maintenance-window"
+ALWAYS_SKIPPED_TAGS = ("citadel", "maintenance-window")
+SENSITIVE_TAGS = ("access", "firewall", "ssh", "sudo", "tailscale", "users")
+RECAP_RE = re.compile(
+    r"^[A-Za-z0-9_.-]+\s+:\s+ok=\d+\s+changed=0\s+unreachable=0\s+failed=0",
+    re.MULTILINE,
+)
+
+
+class WindowError(RuntimeError):
+    """A maintenance-window operation failed safely."""
+
+
+@dataclass(frozen=True)
+class Authorization:
+    seconds: int
+    allow_sensitive: bool
+
+    @property
+    def instance(self) -> str:
+        scope = "sensitive" if self.allow_sensitive else "safe"
+        return f"{self.seconds}-{scope}"
+
+
+@dataclass(frozen=True)
+class BrokerConfig:
+    authorization: Authorization
+    user: str
+    uid: int
+    gid: int
+    home: Path
+    repo: Path
+    controller_unit: str
+    socket_path: Path = SOCKET_PATH
+    lock_path: Path = LOCK_PATH
+    log_dir: Path = LOG_DIR
+
+
+@dataclass(frozen=True)
+class CommandResult:
+    returncode: int
+    output: str
+    timed_out: bool = False
+
+
+def parse_authorization(value: str) -> Authorization:
+    match = re.fullmatch(r"([0-9]+)-(safe|sensitive)", value)
+    if match is None:
+        raise WindowError("invalid maintenance-window authorization")
+    seconds = int(match.group(1))
+    if seconds < MIN_MINUTES * 60 or seconds > MAX_SECONDS:
+        raise WindowError(f"window duration must be between 1 and {MAX_MINUTES} minutes")
+    return Authorization(seconds=seconds, allow_sensitive=match.group(2) == "sensitive")
+
+
+def authorization_for(minutes: int, allow_sensitive: bool) -> Authorization:
+    if minutes < MIN_MINUTES or minutes > MAX_MINUTES:
+        raise WindowError(f"window duration must be between 1 and {MAX_MINUTES} minutes")
+    return Authorization(seconds=minutes * 60, allow_sensitive=allow_sensitive)
+
+
+def format_duration(seconds: int) -> str:
+    seconds = max(0, seconds)
+    hours, remainder = divmod(seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    parts = []
+    if hours:
+        parts.append(f"{hours}h")
+    if minutes or hours:
+        parts.append(f"{minutes}m")
+    parts.append(f"{seconds}s")
+    return " ".join(parts)
+
+
+def send_message(connection: socket.socket | None, payload: dict[str, object]) -> None:
+    if connection is None:
+        return
+    try:
+        connection.sendall((json.dumps(payload, separators=(",", ":")) + "\n").encode())
+    except (BrokenPipeError, ConnectionResetError, OSError):
+        pass
+
+
+def user_environment(config: BrokerConfig) -> list[str]:
+    path = (
+        f"{config.home}/.local/share/mise/shims:{config.home}/.local/bin:"
+        "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    )
+    return [f"HOME={config.home}", f"USER={config.user}", f"LOGNAME={config.user}", f"PATH={path}"]
+
+
+def as_user(config: BrokerConfig, command: Sequence[str]) -> list[str]:
+    return [RUNUSER, "-u", config.user, "--", ENV, "--", *user_environment(config), *command]
+
+
+def skipped_tags(allow_sensitive: bool) -> tuple[str, ...]:
+    if allow_sensitive:
+        return ALWAYS_SKIPPED_TAGS
+    return (*ALWAYS_SKIPPED_TAGS, *SENSITIVE_TAGS)
+
+
+def ansible_command(config: BrokerConfig, *, check: bool) -> list[str]:
+    command = [
+        ANSIBLE_PLAYBOOK,
+        "--inventory",
+        str(config.repo / "inventory/localhost.yml"),
+    ]
+    if check:
+        command.extend(("--check", "--diff"))
+    command.extend(
+        (
+            "--skip-tags",
+            ",".join(skipped_tags(config.authorization.allow_sensitive)),
+            "--extra-vars",
+            "server_config_maintenance_broker=true",
+            "--extra-vars",
+            f"server_config_managed_user={config.user}",
+            str(config.repo / "playbook.yml"),
+        )
+    )
+    return command
+
+
+def terminate_process(process: subprocess.Popen[bytes]) -> None:
+    with contextlib.suppress(ProcessLookupError):
+        os.killpg(process.pid, signal.SIGTERM)
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(process.pid, signal.SIGKILL)
+        process.wait()
+
+
+def run_command(
+    command: Sequence[str],
+    *,
+    cwd: Path,
+    environment: dict[str, str],
+    deadline: float,
+    connection: socket.socket | None,
+    log_file,
+    label: str,
+) -> CommandResult:
+    header = f"\n== {label} ==\n$ {' '.join(command)}\n"
+    log_file.write(header.encode())
+    log_file.flush()
+    send_message(connection, {"type": "output", "data": header})
+
+    process = subprocess.Popen(
+        list(command),
+        cwd=cwd,
+        env=environment,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        start_new_session=True,
+    )
+    assert process.stdout is not None
+    selector = selectors.DefaultSelector()
+    selector.register(process.stdout, selectors.EVENT_READ)
+    output_tail = b""
+    timed_out = False
+
+    try:
+        while selector.get_map():
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                timed_out = True
+                terminate_process(process)
+                break
+            events = selector.select(timeout=min(0.5, remaining))
+            for key, _ in events:
+                chunk = os.read(key.fd, 65536)
+                if not chunk:
+                    selector.unregister(key.fileobj)
+                    continue
+                log_file.write(chunk)
+                log_file.flush()
+                output_tail = (output_tail + chunk)[-2_000_000:]
+                send_message(connection, {"type": "output", "data": chunk.decode(errors="replace")})
+            if process.poll() is not None and not events:
+                with contextlib.suppress(KeyError):
+                    selector.unregister(process.stdout)
+    finally:
+        selector.close()
+        if process.poll() is None:
+            terminate_process(process)
+        process.stdout.close()
+
+    returncode = process.wait()
+    if timed_out:
+        timeout_message = "\nMaintenance window expired; terminated the running command.\n"
+        log_file.write(timeout_message.encode())
+        send_message(connection, {"type": "output", "data": timeout_message})
+    return CommandResult(returncode=returncode, output=output_tail.decode(errors="replace"), timed_out=timed_out)
+
+
+def capture_as_user(config: BrokerConfig, command: Sequence[str]) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        as_user(config, command),
+        cwd=config.repo,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+
+def require_repo_state(
+    config: BrokerConfig,
+    expected_commit: str | None = None,
+    capture: Callable[[BrokerConfig, Sequence[str]], subprocess.CompletedProcess[str]] = capture_as_user,
+) -> str:
+    status = capture(config, [GIT, "status", "--porcelain=v1", "--untracked-files=all"])
+    if status.returncode != 0:
+        raise WindowError(f"cannot inspect repository status: {status.stderr.strip()}")
+    if status.stdout:
+        raise WindowError("server-config must have a clean worktree before convergence")
+
+    branch = capture(config, [GIT, "branch", "--show-current"])
+    if branch.returncode != 0 or branch.stdout.strip() != "main":
+        raise WindowError("server-config must be on main before convergence")
+
+    upstream = capture(config, [GIT, "rev-parse", "--abbrev-ref", "@{upstream}"])
+    if upstream.returncode != 0 or upstream.stdout.strip() != "origin/main":
+        raise WindowError("server-config main must track origin/main")
+
+    counts = capture(config, [GIT, "rev-list", "--left-right", "--count", "origin/main...HEAD"])
+    if counts.returncode != 0:
+        raise WindowError(f"cannot compare server-config with origin/main: {counts.stderr.strip()}")
+    try:
+        behind, _ahead = (int(value) for value in counts.stdout.split())
+    except (ValueError, TypeError) as error:
+        raise WindowError("cannot parse server-config divergence") from error
+    if behind:
+        raise WindowError("server-config is behind or diverged from origin/main")
+
+    head = capture(config, [GIT, "rev-parse", "HEAD"])
+    if head.returncode != 0 or not re.fullmatch(r"[0-9a-f]{40}\n?", head.stdout):
+        raise WindowError("cannot read the server-config commit")
+    commit = head.stdout.strip()
+    if expected_commit is not None and commit != expected_commit:
+        raise WindowError("server-config changed after the dry run; run convergence again")
+    return commit
+
+
+def audit(log_dir: Path, event: str, **details: object) -> None:
+    log_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    os.chmod(log_dir, 0o700)
+    record = {
+        "time": dt.datetime.now(dt.UTC).isoformat(),
+        "event": event,
+        **details,
+    }
+    descriptor = os.open(log_dir / "maintenance-window.jsonl", os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+    with os.fdopen(descriptor, "a") as file:
+        file.write(json.dumps(record, sort_keys=True) + "\n")
+
+
+def run_convergence(
+    config: BrokerConfig,
+    *,
+    deadline: float,
+    connection: socket.socket | None,
+) -> tuple[bool, str]:
+    try:
+        commit = require_repo_state(config)
+    except WindowError as error:
+        return False, str(error)
+
+    timestamp = dt.datetime.now(dt.UTC).strftime("%Y%m%dT%H%M%SZ")
+    log_path = config.log_dir / f"maintenance-window-{timestamp}-{os.getpid()}.log"
+    config.log_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    os.chmod(config.log_dir, 0o700)
+    descriptor = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "ANSIBLE_CONFIG": str(config.repo / "ansible.cfg"),
+            "SERVER_CONFIG_MAINTENANCE_WINDOW": "1",
+        }
+    )
+
+    steps: list[tuple[str, list[str]]] = [
+        ("Validate", as_user(config, [str(config.repo / "bin/validate")])),
+        ("Dry run", ansible_command(config, check=True)),
+    ]
+
+    audit(config.log_dir, "converge-start", commit=commit, sensitive=config.authorization.allow_sensitive)
+    success = False
+    message = "convergence failed"
+    with os.fdopen(descriptor, "wb") as log_file:
+        for label, command in steps:
+            result = run_command(
+                command,
+                cwd=config.repo,
+                environment=environment,
+                deadline=deadline,
+                connection=connection,
+                log_file=log_file,
+                label=label,
+            )
+            if result.returncode != 0:
+                message = f"{label.lower()} failed"
+                if result.timed_out:
+                    message = "maintenance window expired"
+                break
+        else:
+            try:
+                require_repo_state(config, expected_commit=commit)
+            except WindowError as error:
+                message = str(error)
+            else:
+                apply_result = run_command(
+                    ansible_command(config, check=False),
+                    cwd=config.repo,
+                    environment=environment,
+                    deadline=deadline,
+                    connection=connection,
+                    log_file=log_file,
+                    label="Apply",
+                )
+                if apply_result.returncode != 0:
+                    message = "apply failed"
+                    if apply_result.timed_out:
+                        message = "maintenance window expired"
+                else:
+                    verify_result = run_command(
+                        ansible_command(config, check=True),
+                        cwd=config.repo,
+                        environment=environment,
+                        deadline=deadline,
+                        connection=connection,
+                        log_file=log_file,
+                        label="Verify convergence",
+                    )
+                    if verify_result.returncode != 0 or RECAP_RE.search(verify_result.output) is None:
+                        message = "post-apply check did not report changed=0"
+                    else:
+                        doctor_result = run_command(
+                            as_user(config, [str(config.repo / "bin/doctor")]),
+                            cwd=config.repo,
+                            environment=environment,
+                            deadline=deadline,
+                            connection=connection,
+                            log_file=log_file,
+                            label="Doctor",
+                        )
+                        if doctor_result.returncode != 0:
+                            message = "doctor failed"
+                        else:
+                            try:
+                                require_repo_state(config, expected_commit=commit)
+                            except WindowError as error:
+                                message = str(error)
+                            else:
+                                success = True
+                                message = f"converged commit {commit[:12]}"
+
+    audit(
+        config.log_dir,
+        "converge-finish",
+        commit=commit,
+        success=success,
+        message=message,
+        log=str(log_path),
+    )
+    return success, message
+
+
+def peer_uid(connection: socket.socket) -> int:
+    credentials = connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize("3i"))
+    _pid, uid, _gid = struct.unpack("3i", credentials)
+    return uid
+
+
+def receive_request(connection: socket.socket) -> str:
+    data = b""
+    while b"\n" not in data and len(data) <= 4096:
+        chunk = connection.recv(4096)
+        if not chunk:
+            break
+        data += chunk
+    if len(data) > 4096:
+        raise WindowError("request is too large")
+    try:
+        payload = json.loads(data.split(b"\n", 1)[0])
+    except (json.JSONDecodeError, UnicodeDecodeError) as error:
+        raise WindowError("invalid request") from error
+    command = payload.get("command") if isinstance(payload, dict) else None
+    if command not in {"close", "converge", "status"}:
+        raise WindowError("unsupported request")
+    return command
+
+
+def ensure_controller_stopped(unit: str) -> None:
+    active = subprocess.run([SYSTEMCTL, "is-active", "--quiet", unit], check=False).returncode == 0
+    if active:
+        subprocess.run([SYSTEMCTL, "stop", unit], check=True)
+
+
+def acquire_window_lock(path: Path) -> int:
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT, 0o600)
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError as error:
+        os.close(descriptor)
+        raise WindowError("another server-config maintenance window is active") from error
+    return descriptor
+
+
+def validate_broker_config(config: BrokerConfig) -> None:
+    if os.geteuid() != 0:
+        raise WindowError("the maintenance-window daemon must run as root")
+    account = pwd.getpwnam(config.user)
+    if account.pw_uid != config.uid or account.pw_gid != config.gid:
+        raise WindowError("managed-user identity does not match the installed unit")
+    if Path(account.pw_dir) != config.home:
+        raise WindowError("managed-user home does not match the installed unit")
+    if not config.repo.is_absolute() or not config.repo.is_dir():
+        raise WindowError("the configured server-config repository is unavailable")
+    if config.repo.stat().st_uid != config.uid:
+        raise WindowError("the configured server-config repository has an unexpected owner")
+
+
+def run_daemon(config: BrokerConfig) -> int:
+    validate_broker_config(config)
+    deadline = time.monotonic() + config.authorization.seconds
+    stop_requested = False
+    lock_descriptor = acquire_window_lock(config.lock_path)
+
+    config.socket_path.parent.mkdir(mode=0o750, parents=True, exist_ok=True)
+    if config.socket_path.exists() or config.socket_path.is_symlink():
+        config.socket_path.unlink()
+
+    listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    listener.bind(str(config.socket_path))
+    os.chown(config.socket_path, 0, config.gid)
+    os.chmod(config.socket_path, 0o660)
+    listener.listen(4)
+    listener.settimeout(1)
+    signal.signal(signal.SIGTERM, lambda _signum, _frame: listener.close())
+    signal.signal(signal.SIGINT, lambda _signum, _frame: listener.close())
+    audit(
+        config.log_dir,
+        "window-open",
+        seconds=config.authorization.seconds,
+        sensitive=config.authorization.allow_sensitive,
+        user=config.user,
+    )
+
+    last_controller_check = 0.0
+    try:
+        while not stop_requested and time.monotonic() < deadline:
+            now = time.monotonic()
+            if now - last_controller_check >= 10:
+                ensure_controller_stopped(config.controller_unit)
+                last_controller_check = now
+            try:
+                connection, _ = listener.accept()
+            except socket.timeout:
+                continue
+            except OSError:
+                break
+            with connection:
+                if peer_uid(connection) != config.uid:
+                    send_message(connection, {"type": "result", "ok": False, "message": "unauthorized user"})
+                    continue
+                try:
+                    command = receive_request(connection)
+                except WindowError as error:
+                    send_message(connection, {"type": "result", "ok": False, "message": str(error)})
+                    continue
+                if command == "status":
+                    remaining = max(0, int(deadline - time.monotonic()))
+                    send_message(
+                        connection,
+                        {
+                            "type": "result",
+                            "ok": True,
+                            "message": "open",
+                            "remainingSeconds": remaining,
+                            "allowSensitive": config.authorization.allow_sensitive,
+                            "maxSeconds": MAX_SECONDS,
+                        },
+                    )
+                elif command == "close":
+                    send_message(connection, {"type": "result", "ok": True, "message": "closing"})
+                    stop_requested = True
+                else:
+                    success, message = run_convergence(config, deadline=deadline, connection=connection)
+                    send_message(connection, {"type": "result", "ok": success, "message": message})
+                    if not success:
+                        stop_requested = True
+    finally:
+        with contextlib.suppress(OSError):
+            listener.close()
+        with contextlib.suppress(FileNotFoundError):
+            config.socket_path.unlink()
+        audit(config.log_dir, "window-close", expired=time.monotonic() >= deadline)
+        os.close(lock_descriptor)
+    return 0
+
+
+def restore_controller(unit: str, lock_path: Path = LOCK_PATH) -> int:
+    if os.geteuid() != 0:
+        raise WindowError("controller restoration must run as root")
+    try:
+        descriptor = acquire_window_lock(lock_path)
+    except WindowError:
+        return 0
+    try:
+        subprocess.run([SYSTEMCTL, "start", unit], check=True)
+    finally:
+        os.close(descriptor)
+    return 0
+
+
+def request(command: str, socket_path: Path = SOCKET_PATH) -> dict[str, object]:
+    connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        connection.connect(str(socket_path))
+    except (FileNotFoundError, ConnectionRefusedError, PermissionError) as error:
+        raise WindowError("no server-config maintenance window is open") from error
+    with connection:
+        connection.sendall((json.dumps({"command": command}) + "\n").encode())
+        buffer = b""
+        result: dict[str, object] | None = None
+        while True:
+            chunk = connection.recv(65536)
+            if not chunk:
+                break
+            buffer += chunk
+            while b"\n" in buffer:
+                line, buffer = buffer.split(b"\n", 1)
+                if not line:
+                    continue
+                payload = json.loads(line)
+                if payload.get("type") == "output":
+                    sys.stdout.write(str(payload.get("data", "")))
+                    sys.stdout.flush()
+                elif payload.get("type") == "result":
+                    result = payload
+        if result is None:
+            raise WindowError("maintenance-window broker disconnected without a result")
+        return result
+
+
+def open_window(minutes: int, allow_sensitive: bool) -> int:
+    authorization = authorization_for(minutes, allow_sensitive)
+    if os.geteuid() != 0:
+        raise WindowError("open the window with sudo")
+    if SOCKET_PATH.exists():
+        raise WindowError("a server-config maintenance window is already open")
+    unit = f"{WINDOW_UNIT_PREFIX}@{authorization.instance}.service"
+    subprocess.run([SYSTEMCTL, "start", unit], check=True)
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        if SOCKET_PATH.is_socket():
+            status = request("status")
+            if status.get("ok") is True:
+                print(f"Opened a {format_duration(authorization.seconds)} server-config maintenance window.")
+                scope_message = (
+                    "Sensitive host-access changes are allowed."
+                    if allow_sensitive
+                    else "Sensitive host-access changes are blocked."
+                )
+                print(scope_message)
+                print("Citadel remains stopped until the window closes.")
+                return 0
+        time.sleep(0.1)
+    subprocess.run([SYSTEMCTL, "stop", unit], check=False)
+    raise WindowError("maintenance-window service did not become ready")
+
+
+def print_status() -> int:
+    status = request("status")
+    if status.get("ok") is not True:
+        raise WindowError(str(status.get("message", "status request failed")))
+    remaining = int(status.get("remainingSeconds", 0))
+    print("Maintenance window: open")
+    print(f"Remaining: {format_duration(remaining)}")
+    scope_message = (
+        "Sensitive host-access changes: allowed"
+        if status.get("allowSensitive")
+        else "Sensitive host-access changes: blocked"
+    )
+    print(scope_message)
+    print(f"Maximum duration: {MAX_MINUTES // 60}h")
+    return 0
+
+
+def client_command(command: str) -> int:
+    result = request(command)
+    print(str(result.get("message", "")))
+    return 0 if result.get("ok") is True else 1
+
+
+def parser() -> argparse.ArgumentParser:
+    argument_parser = argparse.ArgumentParser(description=__doc__)
+    subparsers = argument_parser.add_subparsers(dest="command", required=True)
+
+    open_parser = subparsers.add_parser("open", help="open a bounded maintenance window")
+    open_parser.add_argument("--minutes", type=int, default=DEFAULT_MINUTES)
+    open_parser.add_argument(
+        "--allow-sensitive",
+        action="store_true",
+        help="allow access, firewall, SSH, Tailscale, sudo, and user tasks",
+    )
+
+    subparsers.add_parser("status", help="show the active window")
+    subparsers.add_parser("converge", help="validate, check, apply, verify, and diagnose")
+    subparsers.add_parser("close", help="close the active window early")
+
+    restore_parser = subparsers.add_parser("restore-controller", help=argparse.SUPPRESS)
+    restore_parser.add_argument("--controller-unit", required=True)
+    restore_parser.add_argument("--lock", type=Path, default=LOCK_PATH)
+
+    daemon_parser = subparsers.add_parser("daemon", help=argparse.SUPPRESS)
+    daemon_parser.add_argument("--authorization", required=True)
+    daemon_parser.add_argument("--user", required=True)
+    daemon_parser.add_argument("--uid", required=True, type=int)
+    daemon_parser.add_argument("--gid", required=True, type=int)
+    daemon_parser.add_argument("--home", required=True, type=Path)
+    daemon_parser.add_argument("--repo", required=True, type=Path)
+    daemon_parser.add_argument("--controller-unit", required=True)
+    daemon_parser.add_argument("--socket", type=Path, default=SOCKET_PATH)
+    daemon_parser.add_argument("--lock", type=Path, default=LOCK_PATH)
+    daemon_parser.add_argument("--log-dir", type=Path, default=LOG_DIR)
+    return argument_parser
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    arguments = parser().parse_args(argv)
+    try:
+        if arguments.command == "open":
+            return open_window(arguments.minutes, arguments.allow_sensitive)
+        if arguments.command == "status":
+            return print_status()
+        if arguments.command in {"close", "converge"}:
+            return client_command(arguments.command)
+        if arguments.command == "restore-controller":
+            return restore_controller(arguments.controller_unit, arguments.lock)
+        authorization = parse_authorization(arguments.authorization)
+        config = BrokerConfig(
+            authorization=authorization,
+            user=arguments.user,
+            uid=arguments.uid,
+            gid=arguments.gid,
+            home=arguments.home,
+            repo=arguments.repo.resolve(),
+            controller_unit=arguments.controller_unit,
+            socket_path=arguments.socket,
+            lock_path=arguments.lock,
+            log_dir=arguments.log_dir,
+        )
+        return run_daemon(config)
+    except (WindowError, subprocess.CalledProcessError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

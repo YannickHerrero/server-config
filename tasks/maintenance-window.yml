@@ -1,0 +1,62 @@
+---
+- name: Inspect the maintenance-window socket
+  ansible.builtin.stat:
+    path: /run/server-config-maintenance-window/window.sock
+    follow: false
+  register: server_config_maintenance_window_socket
+  tags:
+    - maintenance-window
+
+- name: Refuse to replace an active maintenance-window broker
+  ansible.builtin.assert:
+    that:
+      - not server_config_maintenance_window_socket.stat.exists
+    fail_msg: Close the active server-config maintenance window before updating its broker.
+    quiet: true
+  tags:
+    - maintenance-window
+
+- name: Require a bounded maintenance-window duration
+  ansible.builtin.assert:
+    that:
+      - server_config_maintenance_window_max_minutes | int == 480
+    fail_msg: The supported server-config maintenance-window maximum is eight hours.
+    quiet: true
+  tags:
+    - maintenance-window
+
+- name: Install the maintenance-window broker
+  become: true
+  become_user: root
+  ansible.builtin.copy:
+    src: server-config-window
+    dest: /usr/local/bin/server-config-window
+    owner: root
+    group: root
+    mode: "0755"
+  tags:
+    - maintenance-window
+
+- name: Install the maintenance-window systemd template
+  become: true
+  become_user: root
+  ansible.builtin.template:
+    src: server-config-maintenance-window@.service.j2
+    dest: /etc/systemd/system/server-config-maintenance-window@.service
+    owner: root
+    group: root
+    mode: "0644"
+  register: server_config_maintenance_window_unit
+  tags:
+    - maintenance-window
+
+- name: Reload systemd for the maintenance-window template
+  become: true
+  become_user: root
+  when:
+    - server_config_maintenance_window_unit.changed
+    - not ansible_check_mode
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  tags:
+    - maintenance-window

@@ -19,6 +19,7 @@ Work in three separate stages unless the user explicitly asks to continue:
 - Do not edit managed files under `/etc` directly. Change the playbook or a template, inspect the diff, then apply it.
 - Do not grant passwordless sudo to Ansible, Pi, or another agent.
 - Do not change SSH, sudo, networking, or firewall rules without explicit approval and a tested recovery path.
+- A maintenance window opened interactively by the user is standing approval for brokered convergence within that window's scope. The agent must never open or extend a window.
 - Do not run `pi update` directly. Change the pinned version in `group_vars/all.yml`, validate, and apply.
 
 ## Commands
@@ -29,6 +30,8 @@ Work in three separate stages unless the user explicitly asks to continue:
 - `./bin/doctor` reports host, RAID, storage, update, runtime, and KVM state without changing it.
 
 After an application, run `./bin/check` again. A converged host should report `changed=0`.
+
+During an active maintenance window, use only `server-config-window converge`. The broker enforces validation, a dry run, application, `changed=0`, and doctor. It requires a clean committed `main`, refuses a checkout behind `origin/main`, and records root-owned logs. A normal window blocks access, firewall, SSH, Tailscale, sudo, user-account, Citadel, and broker tasks. The user must open a sensitive window to authorize host-access categories. Citadel and broker updates always require the ordinary interactive apply path.
 
 ## Design rules
 

@@ -69,9 +69,40 @@ No tracked configuration forces a dark or light palette. Herdr uses the terminal
 ./bin/check                # Dry run with a diff
 ./bin/apply                # Validate and apply once
 ./bin/doctor               # Read-only system report
+server-config-window status # Inspect an active maintenance window
 ```
 
 `converge` asks for sudo once, shows the dry-run diff, waits for explicit approval, applies twice, and fails unless the second application reports `changed=0 failed=0`. Its latest logs are stored with private permissions in `~/.local/state/server-config/logs`.
+
+## Maintenance windows
+
+A maintenance window lets the agent converge several committed `server-config` changes after one interactive authorization. Open one for 30 minutes:
+
+```bash
+sudo server-config-window open --minutes 30
+```
+
+The maximum duration is eight hours (`--minutes 480`). Opening a window stops Citadel and its managed applications so Normandy's browser terminal cannot reach the broker. Citadel starts again when the window closes, expires, or fails.
+
+While the window is open, the agent uses:
+
+```bash
+server-config-window status
+server-config-window converge
+server-config-window close
+```
+
+`converge` accepts no Ansible arguments. It requires a clean committed `main` that is not behind `origin/main`, then runs validation, an Ansible dry run, the apply, a second dry run that must report `changed=0`, and doctor. It writes private audit and command logs under `/var/log/server-config` and closes the window after any failed convergence. It never commits or pushes source changes.
+
+A normal window skips access, firewall, SSH, Tailscale, sudo, user-account, Citadel, and maintenance-window tasks. To authorize the host-access categories for the whole window, open it with an additional warning:
+
+```bash
+sudo server-config-window open --minutes 30 --allow-sensitive
+```
+
+Citadel and maintenance-window tasks always remain blocked because they control the browser shell and the broker itself. Apply changes to those tasks through the ordinary interactive workflow.
+
+The broker grants root-equivalent execution of the committed playbook during the authorized period. Its systemd service and executable remain root-owned, it installs no passwordless sudo rule, and only the managed Unix user can access its runtime socket. Do not open a window while another person or untrusted process can use the managed Unix account.
 
 Git identity is optional local metadata. The onboarding form writes it to the ignored file `config/git/identity.local` with mode `0600`. The playbook links it into the effective global Git configuration while preserving authentication managed by `gh`. `config/git/identity.example` documents the file format.
 
@@ -100,6 +131,7 @@ To inspect a remote host from a trusted control machine, create the ignored file
 - tracked Herdr configuration with `Ctrl+A`, `|` vertical split, and `-` horizontal split
 - tracked Neovim configuration and plugin lockfile without tmux integration or a forced color theme
 - the Supervisor package and Citadel controller bootstrap
+- bounded server-config maintenance windows with an eight-hour maximum
 - removal of the unused `bind9` server
 - read-only checks for the OS, RAID, storage, private access, network, KVM, shell, user tools, Pi, Herdr, and Citadel
 
@@ -112,7 +144,7 @@ The playbook installs Supervisor, disables its distribution-wide daemon, and sta
 ## Not managed yet
 
 - Ubuntu release upgrades
-- tailnet policy, Tailscale authentication, key expiry, or sudo policy
+- tailnet policy, Tailscale authentication, key expiry, or passwordless sudo policy
 - Android SDK, emulator, Java, browsers, or Maestro
 - Docker
 - application repositories, Citadel's service catalog or routes, user data, torrents, or backups

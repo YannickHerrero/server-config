@@ -666,6 +666,11 @@
       tags:
         - citadel
 
+    - name: Configure bounded server-config maintenance windows
+      ansible.builtin.import_tasks: tasks/maintenance-window.yml
+      tags:
+        - maintenance-window
+
   handlers:
     - name: Reload OpenSSH
       become: true

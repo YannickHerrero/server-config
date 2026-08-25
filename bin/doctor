@@ -10,6 +10,10 @@ EXPECTED_ONBOARDING_VERSION=$(awk -F'"' '/^server_config_onboarding_version:/ {p
 EXPECTED_SWAP_PATH=$(awk '/^server_config_swap_path:/ {print $2}' "$ROOT_DIR/group_vars/all.yml")
 EXPECTED_CITADEL_ENABLED=$(awk '/^server_config_citadel_enabled:/ {print $2}' "$ROOT_DIR/group_vars/all.yml")
 EXPECTED_CITADEL_PORT=$(awk '/^server_config_citadel_port:/ {print $2}' "$ROOT_DIR/group_vars/all.yml")
+EXPECTED_MAINTENANCE_WINDOW_MAX=$(awk '/^server_config_maintenance_window_max_minutes:/ {print $2}' "$ROOT_DIR/group_vars/all.yml")
+MAINTENANCE_WINDOW_SOCKET=/run/server-config-maintenance-window/window.sock
+MAINTENANCE_WINDOW_BINARY=/usr/local/bin/server-config-window
+MAINTENANCE_WINDOW_UNIT=/etc/systemd/system/server-config-maintenance-window@.service
 failures=0
 
 section() {
@@ -298,13 +302,52 @@ else
     warn "Pi is not authenticated yet; run pi and then /login"
 fi
 
+section "Maintenance window"
+if [[ $EXPECTED_MAINTENANCE_WINDOW_MAX == 480 ]]; then
+    pass "maintenance windows have an eight-hour maximum"
+else
+    fail "maintenance-window maximum is not eight hours"
+fi
+if [[ -x $MAINTENANCE_WINDOW_BINARY \
+    && $(stat -c '%U:%G:%a' "$MAINTENANCE_WINDOW_BINARY") == root:root:755 ]]; then
+    pass "maintenance-window broker is installed as root:root 0755"
+else
+    fail "maintenance-window broker is missing or has unexpected ownership"
+fi
+if [[ -f $MAINTENANCE_WINDOW_UNIT \
+    && $(stat -c '%U:%G:%a' "$MAINTENANCE_WINDOW_UNIT") == root:root:644 ]]; then
+    pass "maintenance-window systemd template is installed as root:root 0644"
+else
+    fail "maintenance-window systemd template is missing or has unexpected ownership"
+fi
+if [[ -S $MAINTENANCE_WINDOW_SOCKET ]]; then
+    warn "a server-config maintenance window is open"
+else
+    pass "no server-config maintenance window is open"
+fi
+
 if [[ $EXPECTED_CITADEL_ENABLED == true ]]; then
     section "Citadel"
     citadel_unit="citadel@$USER.service"
-    if systemctl is-enabled --quiet "$citadel_unit" && systemctl is-active --quiet "$citadel_unit"; then
-        pass "$citadel_unit is enabled and active"
+    if [[ -S $MAINTENANCE_WINDOW_SOCKET ]]; then
+        if systemctl is-enabled --quiet "$citadel_unit" && ! systemctl is-active --quiet "$citadel_unit"; then
+            warn "$citadel_unit is intentionally stopped during the maintenance window"
+        else
+            fail "$citadel_unit has an unexpected maintenance-window state"
+        fi
     else
-        fail "$citadel_unit is not enabled and active"
+        if systemctl is-enabled --quiet "$citadel_unit" && systemctl is-active --quiet "$citadel_unit"; then
+            pass "$citadel_unit is enabled and active"
+        else
+            fail "$citadel_unit is not enabled and active"
+        fi
+        if citadel_health=$(curl --fail --silent --show-error \
+            "http://127.0.0.1:$EXPECTED_CITADEL_PORT/api/health" 2>/dev/null) \
+            && jq -e '.status == "ok"' <<<"$citadel_health" >/dev/null; then
+            pass "Citadel localhost health check passed"
+        else
+            fail "Citadel localhost health check failed"
+        fi
     fi
     if systemctl is-enabled --quiet supervisor.service 2>/dev/null; then
         fail "the distribution Supervisor service is enabled"
@@ -315,13 +358,6 @@ if [[ $EXPECTED_CITADEL_ENABLED == true ]]; then
         fail "the distribution Supervisor service is active"
     else
         pass "the distribution Supervisor service is stopped"
-    fi
-    if citadel_health=$(curl --fail --silent --show-error \
-        "http://127.0.0.1:$EXPECTED_CITADEL_PORT/api/health" 2>/dev/null) \
-        && jq -e '.status == "ok"' <<<"$citadel_health" >/dev/null; then
-        pass "Citadel localhost health check passed"
-    else
-        fail "Citadel localhost health check failed"
     fi
 fi
 

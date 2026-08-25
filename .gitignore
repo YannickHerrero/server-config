@@ -15,6 +15,7 @@ secrets/
 onboarding/target/
 
 # Test and diagnostic output
+__pycache__/
 artifacts/
 
 # OS and editor files

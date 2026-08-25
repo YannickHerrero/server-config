@@ -40,11 +40,13 @@ Before changing a system package, global CLI, runtime, user configuration, file 
 2. Change the Ansible configuration or a tracked source file.
 3. Run `./bin/validate`.
 4. Run `./bin/check` and review the diff.
-5. Obtain explicit approval before `./bin/apply`.
-6. Apply the change.
-7. Run `./bin/check` again. It must report `changed=0`.
-8. Run `./bin/doctor`.
-9. Commit the change atomically.
+5. Obtain explicit approval before `./bin/apply`, or confirm that the user opened an active maintenance window whose scope covers the change.
+6. Apply directly only after explicit approval. During a maintenance window, request application only through `server-config-window converge`.
+7. Run `./bin/check` again. It must report `changed=0`; the broker enforces this during a maintenance window.
+8. Run `./bin/doctor`; the broker enforces this during a maintenance window.
+9. Commit the change atomically before requesting brokered convergence.
+
+A maintenance window is standing application approval only until its displayed deadline. Never open or extend one on the user's behalf. Confirm its scope with `server-config-window status`. A normal window blocks access, firewall, SSH, Tailscale, sudo, user-account, Citadel, and maintenance-window tasks. The user must open a sensitive window to authorize host-access categories. Citadel and maintenance-window changes always use the ordinary interactive apply path. A window does not authorize pushing or releasing commits.
 
 Do not make persistent changes directly with `apt install`, global npm installs, `mise use -g`, installer pipes, edits under `/etc`, or edits to managed files in `$HOME`.
 
