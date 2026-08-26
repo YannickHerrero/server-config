@@ -54,6 +54,14 @@ rendered = template.render(
 subprocess.run(["bash", "-n", "-"], input=rendered, text=True, check=True)
 subprocess.run(["shellcheck", "--shell=bash", "-"], input=rendered, text=True, check=True)
 
+docker_unit = Environment(undefined=StrictUndefined).from_string(
+    Path("templates/server-config-docker@.service.j2").read_text()
+).render(
+    server_config_docker_install_dir="/opt/server-config/docker/29.1.3",
+    server_config_docker_runtime_dir="/run/server-config-docker",
+)
+assert "--exec-opt=native.cgroupdriver=cgroupfs" in docker_unit
+
 profile = Environment(undefined=StrictUndefined).from_string(
     Path("templates/server-config-rootlesskit.apparmor.j2").read_text()
 ).render(server_config_docker_install_dir="/opt/server-config/docker/29.1.3")

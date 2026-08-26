@@ -22,6 +22,7 @@ ExecStart={{ server_config_docker_install_dir }}/dockerd-rootless.sh \
     --pidfile={{ server_config_docker_runtime_dir }}/%i/docker.pid \
     --storage-driver=fuse-overlayfs \
     --userland-proxy=false \
+    --exec-opt=native.cgroupdriver=cgroupfs \
     --log-driver=local \
     --log-opt=max-size=10m \
     --log-opt=max-file=5

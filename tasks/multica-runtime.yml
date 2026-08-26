@@ -402,7 +402,7 @@
       - /usr/local/bin/docker
       - info
       - --format
-      - "{{ '{{' }}json .SecurityOptions{{ '}}' }}"
+      - "{{ '{{' }}.CgroupDriver{{ '}}' }}|{{ '{{' }}json .SecurityOptions{{ '}}' }}"
   environment:
     HOME: "{{ ansible_user_dir }}"
     DOCKER_HOST: >-
@@ -411,6 +411,7 @@
   changed_when: false
   failed_when: >-
     'name=rootless' not in server_config_managed_user_docker_info.stdout
+    or server_config_managed_user_docker_info.stdout.startswith('systemd|')
   tags:
     - docker
     - multica

@@ -347,6 +347,12 @@ if [[ $EXPECTED_MULTICA_ENABLED == true ]]; then
     else
         fail "the managed user's rootless Docker daemon is unavailable"
     fi
+    if docker_cgroup_driver=$(DOCKER_HOST="$managed_docker_socket" $docker_binary info --format '{{.CgroupDriver}}' 2>/dev/null) \
+        && [[ $docker_cgroup_driver == none || $docker_cgroup_driver == cgroupfs ]]; then
+        pass "rootless containers avoid privileged systemd cgroup scopes"
+    else
+        fail "rootless Docker uses an unavailable systemd cgroup scope"
+    fi
     if [[ -S /var/run/docker.sock ]]; then
         fail "the rootful Docker socket exists"
     else
