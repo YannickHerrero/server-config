@@ -15,27 +15,15 @@ if (( ${#missing[@]} > 0 )); then
 fi
 
 shellcheck install.sh bin/apply bin/check bin/converge bin/doctor bin/onboard bin/validate \
-    files/multica-heavy-run tests/check-maintenance-window.sh
+    tests/check-maintenance-window.sh
 zsh -n config/zsh/zshenv config/zsh/.zshrc config/zsh/*.zsh
 python3 -m json.tool config/pi/settings.desired.json >/dev/null
-python3 -m json.tool config/multica/pi-settings.json >/dev/null
 python3 -m json.tool config/nvim/lazy-lock.json >/dev/null
 test -x files/server-config-window
-test -x files/multica-bootstrap
-test -x files/multica-heavy-run
-test -x files/multica-project-config
-test -x files/multica-project-sync
-test -x files/multica-run
 test -x tests/check-maintenance-window.sh
 python3 -m py_compile \
     files/server-config-window \
-    files/multica-bootstrap \
-    files/multica-project-config \
-    files/multica-project-sync \
-    files/multica-run \
-    files/multica_project.py \
-    tests/test_maintenance_window.py \
-    tests/test_multica_project.py
+    tests/test_maintenance_window.py
 python3 -W error -m unittest discover -s tests -p 'test_*.py'
 python3 - <<'PY'
 from pathlib import Path
@@ -43,16 +31,6 @@ import subprocess
 import tempfile
 
 from jinja2 import Environment, StrictUndefined
-
-template = Environment(undefined=StrictUndefined).from_string(
-    Path("templates/multica-android-emulator.j2").read_text()
-)
-rendered = template.render(
-    server_config_android_sdk_root="/opt/android-sdk",
-    server_config_android_avd_name="multica-api-35",
-)
-subprocess.run(["bash", "-n", "-"], input=rendered, text=True, check=True)
-subprocess.run(["shellcheck", "--shell=bash", "-"], input=rendered, text=True, check=True)
 
 docker_unit = Environment(undefined=StrictUndefined).from_string(
     Path("templates/server-config-docker@.service.j2").read_text()
@@ -104,29 +82,17 @@ for path in skills:
 PY
 python3 - <<'PY'
 from pathlib import Path
-import re
-import yaml
 
 variables = Path("group_vars/all.yml").read_text()
-version_match = re.search(r'^server_config_multica_version: "([^"]+)"$', variables, re.MULTILINE)
-assert version_match, "Multica version is missing"
-version = version_match.group(1)
-compose = yaml.safe_load(Path("config/multica/compose.override.yml").read_text())
-assert compose["services"]["backend"]["image"].endswith(f":v{version}"), "backend image version drift"
-assert compose["services"]["frontend"]["image"].endswith(f":v{version}"), "frontend image version drift"
-assert compose["services"]["proxy"]["ports"] == ["127.0.0.1:4180:4180"], "proxy must stay on loopback"
-
-agent_root = Path("config/multica/agents")
-assert sorted(path.name for path in agent_root.glob("*.md")) == [
-    "common.md", "giselle.md", "karina.md", "ningning.md", "winter.md"
-], "unexpected Multica agent instruction files"
-for path in agent_root.glob("*.md"):
-    content = path.read_text()
-    assert content.strip(), f"{path} is empty"
-    assert "--no-context-files" not in content, f"{path} disables the Multica runtime brief"
-    assert "--no-skills" not in content, f"{path} disables Multica skills"
+assert "server_config_multica_" not in variables, "application settings belong in ~/dev/multica"
+for path in (
+    Path("config/multica"),
+    Path("tasks/multica-runtime.yml"),
+    Path("tasks/multica-server.yml"),
+    Path("tasks/multica-orchestration.yml"),
+):
+    assert not path.exists(), f"application configuration remains in server-config: {path}"
 PY
-systemd-analyze calendar '*-*-* 08:00:00 Europe/Paris' '*-*-* 20:00:00 Europe/Paris' >/dev/null
 python3 - <<'PY'
 import os
 from pathlib import Path
@@ -144,7 +110,7 @@ if identity.exists():
     ).stdout.splitlines()
     assert sorted(keys) == ["user.email", "user.name"], "local Git identity has unexpected keys"
 PY
-yamllint .ansible-lint .yamllint config/multica/compose.override.yml group_vars/all.yml inventory/localhost.yml playbook.yml tasks/*.yml
+yamllint .ansible-lint .yamllint group_vars/all.yml inventory/localhost.yml playbook.yml tasks/*.yml
 ansible-playbook --syntax-check playbook.yml
 ansible-lint playbook.yml
 

@@ -59,22 +59,16 @@
       ansible.builtin.import_tasks: tasks/docker.yml
       tags:
         - docker
-        - multica
-
-    - name: Configure the isolated Multica runtime
-      ansible.builtin.import_tasks: tasks/multica-runtime.yml
-      tags:
-        - multica
-
-    - name: Install Multica project orchestration
-      ansible.builtin.import_tasks: tasks/multica-orchestration.yml
-      tags:
-        - multica
 
     - name: Configure headless Android QA
       ansible.builtin.import_tasks: tasks/android.yml
       tags:
         - android
+
+    - name: Retire legacy host-managed Multica services
+      ansible.builtin.import_tasks: tasks/multica-retirement.yml
+      tags:
+        - multica
 
     - name: Set the timezone file
       become: true
@@ -427,11 +421,6 @@
       tags:
         - access
         - tailscale
-
-    - name: Configure the private Multica server
-      ansible.builtin.import_tasks: tasks/multica-server.yml
-      tags:
-        - multica
 
     - name: Install Mosh for private remote sessions
       become: true

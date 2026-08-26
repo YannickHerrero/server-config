@@ -1,0 +1,92 @@
+---
+- name: Inspect retired Multica systemd units
+  become: true
+  become_user: root
+  ansible.builtin.stat:
+    path: "/etc/systemd/system/{{ item }}"
+  loop:
+    - multica-daemon.service
+    - multica-project-sync.service
+    - multica-project-sync.timer
+  register: server_config_retired_multica_units
+  tags:
+    - multica
+
+- name: Stop and disable retired Multica systemd units
+  become: true
+  become_user: root
+  when: item.stat.exists
+  ansible.builtin.systemd_service:
+    name: "{{ item.item }}"
+    enabled: false
+    state: stopped
+  loop: "{{ server_config_retired_multica_units.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  tags:
+    - multica
+
+- name: Remove retired Multica systemd units
+  become: true
+  become_user: root
+  ansible.builtin.file:
+    path: "/etc/systemd/system/{{ item }}"
+    state: absent
+  loop:
+    - multica-daemon.service
+    - multica-project-sync.service
+    - multica-project-sync.timer
+    - multi-user.target.wants/multica-daemon.service
+    - timers.target.wants/multica-project-sync.timer
+  register: server_config_retired_multica_units_removed
+  tags:
+    - multica
+
+- name: Reload systemd after retiring Multica units
+  become: true
+  become_user: root
+  when:
+    - not ansible_check_mode
+    - server_config_retired_multica_units_removed.changed
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  tags:
+    - multica
+
+- name: Remove retired system-wide Multica commands
+  become: true
+  become_user: root
+  ansible.builtin.file:
+    path: "/usr/local/bin/{{ item }}"
+    state: absent
+  loop:
+    - multica
+    - multica-android-emulator
+    - multica-bootstrap
+    - multica-heavy-run
+    - multica-project-config
+    - multica-project-sync
+    - multica-run
+  tags:
+    - multica
+
+- name: Remove retired system-wide Multica files
+  become: true
+  become_user: root
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /opt/server-config/multica
+    - /usr/local/lib/server-config/multica_project.py
+    - /usr/local/share/server-config/multica
+    - /var/cache/server-config/multica-cli-0.4.34.tar.gz
+  tags:
+    - multica
+
+- name: Remove the retired user-level Multica server command
+  ansible.builtin.file:
+    path: "{{ ansible_user_dir }}/.local/bin/multica-server"
+    state: absent
+  tags:
+    - multica

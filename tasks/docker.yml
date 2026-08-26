@@ -7,7 +7,6 @@
     state: present
   tags:
     - docker
-    - multica
     - packages
 
 - name: Persist the bridge netfilter kernel module
@@ -21,7 +20,6 @@
     mode: "0644"
   tags:
     - docker
-    - multica
 
 - name: Inspect the bridge netfilter kernel module
   ansible.builtin.stat:
@@ -29,7 +27,6 @@
   register: server_config_docker_bridge_netfilter
   tags:
     - docker
-    - multica
 
 - name: Load the bridge netfilter kernel module
   become: true
@@ -42,7 +39,6 @@
     state: restarted
   tags:
     - docker
-    - multica
 
 - name: Inspect the pinned Docker installation
   become: true
@@ -52,7 +48,6 @@
   register: server_config_docker_installed
   tags:
     - docker
-    - multica
 
 - name: Create the pinned Docker installation directories
   become: true
@@ -74,7 +69,6 @@
       mode: "0755"
   tags:
     - docker
-    - multica
 
 - name: Download the pinned Docker Engine archive
   become: true
@@ -89,7 +83,6 @@
     mode: "0644"
   tags:
     - docker
-    - multica
 
 - name: Extract the pinned Docker Engine
   become: true
@@ -106,7 +99,6 @@
     group: root
   tags:
     - docker
-    - multica
 
 - name: Download the pinned Docker rootless archive
   become: true
@@ -121,7 +113,6 @@
     mode: "0644"
   tags:
     - docker
-    - multica
 
 - name: Extract the pinned Docker rootless tools
   become: true
@@ -138,7 +129,6 @@
     group: root
   tags:
     - docker
-    - multica
 
 - name: Install the pinned Docker Compose plugin
   become: true
@@ -154,7 +144,6 @@
     mode: "0755"
   tags:
     - docker
-    - multica
 
 - name: Select the pinned Docker Compose plugin
   become: true
@@ -168,7 +157,6 @@
     state: link
   tags:
     - docker
-    - multica
 
 - name: Install the pinned Docker Buildx plugin
   become: true
@@ -184,7 +172,6 @@
     mode: "0755"
   tags:
     - docker
-    - multica
 
 - name: Select the pinned Docker Buildx plugin
   become: true
@@ -198,7 +185,6 @@
     state: link
   tags:
     - docker
-    - multica
 
 - name: Select the pinned Docker client
   become: true
@@ -212,7 +198,6 @@
     state: link
   tags:
     - docker
-    - multica
 
 - name: Report the planned pinned Docker installation
   when:
@@ -223,7 +208,6 @@
   changed_when: true
   tags:
     - docker
-    - multica
 
 - name: Install the AppArmor profile for pinned rootlesskit
   become: true
@@ -237,7 +221,6 @@
   register: server_config_rootlesskit_apparmor_profile
   tags:
     - docker
-    - multica
 
 - name: Load the AppArmor profile for pinned rootlesskit
   become: true
@@ -251,7 +234,6 @@
   changed_when: server_config_rootlesskit_apparmor_profile.changed
   tags:
     - docker
-    - multica
 
 - name: Block an accidental rootful Docker service
   become: true
@@ -268,7 +250,6 @@
     - docker.socket
   tags:
     - docker
-    - multica
 
 - name: Create the managed user's Docker data directory
   ansible.builtin.file:
@@ -279,7 +260,6 @@
     state: directory
   tags:
     - docker
-    - multica
 
 - name: Install the rootless Docker systemd template
   become: true
@@ -293,7 +273,6 @@
   register: server_config_docker_unit
   tags:
     - docker
-    - multica
 
 - name: Reload systemd for the rootless Docker template
   become: true
@@ -305,7 +284,6 @@
     daemon_reload: true
   tags:
     - docker
-    - multica
 
 - name: Enable the managed user's rootless Docker service
   become: true
@@ -317,7 +295,6 @@
     state: "{{ 'restarted' if server_config_docker_unit.changed else 'started' }}"
   tags:
     - docker
-    - multica
 
 - name: Report the planned rootless Docker service activation
   when:
@@ -328,7 +305,6 @@
   changed_when: true
   tags:
     - docker
-    - multica
 
 - name: Verify the managed user's rootless Docker service
   when: not ansible_check_mode
@@ -349,7 +325,6 @@
     or server_config_managed_user_docker_info.stdout.startswith('systemd|')
   tags:
     - docker
-    - multica
 
 - name: Verify the pinned Docker client
   when: not ansible_check_mode
@@ -364,7 +339,6 @@
     not in server_config_docker_version_output.stdout
   tags:
     - docker
-    - multica
 
 - name: Verify the pinned Docker Compose plugin
   when: not ansible_check_mode
@@ -383,4 +357,3 @@
     != server_config_docker_compose_version
   tags:
     - docker
-    - multica
