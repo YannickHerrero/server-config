@@ -306,8 +306,6 @@
     mode: "{{ item.mode }}"
     state: directory
   loop:
-    - path: "{{ ansible_user_dir }}/.local/share/docker"
-      mode: "0710"
     - path: "{{ ansible_user_dir }}/.local/state/multica"
       mode: "0700"
     - path: "{{ server_config_multica_pi_dir }}"
@@ -355,65 +353,6 @@
     mode: "0600"
   tags:
     - git
-    - multica
-
-- name: Inspect the rootless Docker systemd template
-  become: true
-  become_user: root
-  ansible.builtin.stat:
-    path: /etc/systemd/system/server-config-docker@.service
-  register: server_config_rootless_docker_unit
-  tags:
-    - docker
-    - multica
-
-- name: Report the planned rootless Docker services
-  when:
-    - server_config_multica_enabled
-    - ansible_check_mode
-    - not server_config_rootless_docker_unit.stat.exists
-  ansible.builtin.debug:
-    msg: "Enable the rootless Docker service for {{ ansible_user_id }}"
-  changed_when: true
-  tags:
-    - docker
-    - multica
-
-- name: Enable the managed user's rootless Docker service
-  become: true
-  become_user: root
-  when:
-    - server_config_multica_enabled
-    - not ansible_check_mode or server_config_rootless_docker_unit.stat.exists
-  ansible.builtin.systemd_service:
-    name: "server-config-docker@{{ ansible_user_id }}.service"
-    enabled: true
-    state: "{{ 'restarted' if server_config_docker_unit.changed else 'started' }}"
-  tags:
-    - docker
-    - multica
-
-- name: Verify the managed user's rootless Docker service
-  when:
-    - server_config_multica_enabled
-    - not ansible_check_mode
-  ansible.builtin.command:
-    argv:
-      - /usr/local/bin/docker
-      - info
-      - --format
-      - "{{ '{{' }}.CgroupDriver{{ '}}' }}|{{ '{{' }}json .SecurityOptions{{ '}}' }}"
-  environment:
-    HOME: "{{ ansible_user_dir }}"
-    DOCKER_HOST: >-
-      unix://{{ server_config_docker_runtime_dir }}/{{ ansible_user_id }}/docker.sock
-  register: server_config_managed_user_docker_info
-  changed_when: false
-  failed_when: >-
-    'name=rootless' not in server_config_managed_user_docker_info.stdout
-    or server_config_managed_user_docker_info.stdout.startswith('systemd|')
-  tags:
-    - docker
     - multica
 
 - name: Install the Multica daemon systemd unit

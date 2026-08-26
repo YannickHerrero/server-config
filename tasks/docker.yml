@@ -270,6 +270,17 @@
     - docker
     - multica
 
+- name: Create the managed user's Docker data directory
+  ansible.builtin.file:
+    path: "{{ ansible_user_dir }}/.local/share/docker"
+    owner: "{{ ansible_user_id }}"
+    group: "{{ ansible_user_gid }}"
+    mode: "0710"
+    state: directory
+  tags:
+    - docker
+    - multica
+
 - name: Install the rootless Docker systemd template
   become: true
   become_user: root
@@ -292,6 +303,50 @@
     - not ansible_check_mode
   ansible.builtin.systemd_service:
     daemon_reload: true
+  tags:
+    - docker
+    - multica
+
+- name: Enable the managed user's rootless Docker service
+  become: true
+  become_user: root
+  when: not ansible_check_mode or not server_config_docker_unit.changed
+  ansible.builtin.systemd_service:
+    name: "server-config-docker@{{ ansible_user_id }}.service"
+    enabled: true
+    state: "{{ 'restarted' if server_config_docker_unit.changed else 'started' }}"
+  tags:
+    - docker
+    - multica
+
+- name: Report the planned rootless Docker service activation
+  when:
+    - ansible_check_mode
+    - server_config_docker_unit.changed
+  ansible.builtin.debug:
+    msg: "Enable the rootless Docker service for {{ ansible_user_id }}"
+  changed_when: true
+  tags:
+    - docker
+    - multica
+
+- name: Verify the managed user's rootless Docker service
+  when: not ansible_check_mode
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/docker
+      - info
+      - --format
+      - "{{ '{{' }}.CgroupDriver{{ '}}' }}|{{ '{{' }}json .SecurityOptions{{ '}}' }}"
+  environment:
+    HOME: "{{ ansible_user_dir }}"
+    DOCKER_HOST: >-
+      unix://{{ server_config_docker_runtime_dir }}/{{ ansible_user_id }}/docker.sock
+  register: server_config_managed_user_docker_info
+  changed_when: false
+  failed_when: >-
+    'name=rootless' not in server_config_managed_user_docker_info.stdout
+    or server_config_managed_user_docker_info.stdout.startswith('systemd|')
   tags:
     - docker
     - multica
