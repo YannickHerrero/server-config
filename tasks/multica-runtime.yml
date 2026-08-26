@@ -313,34 +313,6 @@
   tags:
     - multica
 
-- name: Install the managed user's Multica Git exclude file
-  when: server_config_multica_enabled
-  ansible.builtin.copy:
-    src: "{{ playbook_dir }}/config/git/ignore"
-    dest: "{{ ansible_user_dir }}/.config/git/ignore"
-    owner: "{{ ansible_user_id }}"
-    group: "{{ ansible_user_gid }}"
-    mode: "0600"
-  tags:
-    - git
-    - multica
-
-- name: Configure the managed user's Multica Git exclude file
-  when: server_config_multica_enabled
-  ansible.builtin.blockinfile:
-    path: "{{ ansible_user_dir }}/.gitconfig"
-    block: |-
-      [core]
-          excludesFile = ~/.config/git/ignore
-    marker: "# {mark} server-config Multica excludes"
-    create: true
-    owner: "{{ ansible_user_id }}"
-    group: "{{ ansible_user_gid }}"
-    mode: "0600"
-  tags:
-    - git
-    - multica
-
 - name: Install the Multica daemon systemd unit
   become: true
   become_user: root

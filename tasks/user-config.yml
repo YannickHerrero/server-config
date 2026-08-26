@@ -23,6 +23,32 @@
   tags:
     - user-config
 
+- name: Install the managed user's global Git exclude file
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/config/git/ignore"
+    dest: "{{ ansible_user_dir }}/.config/git/ignore"
+    owner: "{{ ansible_user_id }}"
+    group: "{{ ansible_user_gid }}"
+    mode: "0600"
+  tags:
+    - user-config
+    - git
+
+- name: Configure the managed user's global Git exclude file
+  ansible.builtin.blockinfile:
+    path: "{{ ansible_user_dir }}/.gitconfig"
+    block: |-
+      [core]
+          excludesFile = ~/.config/git/ignore
+    marker: "# {mark} server-config Multica excludes"
+    create: true
+    owner: "{{ ansible_user_id }}"
+    group: "{{ ansible_user_gid }}"
+    mode: "0600"
+  tags:
+    - user-config
+    - git
+
 - name: Inspect existing managed user files
   ansible.builtin.stat:
     path: "{{ item.path }}"
