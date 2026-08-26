@@ -180,20 +180,6 @@
     - multica
     - users
 
-- name: Grant the managed user access to KVM
-  become: true
-  become_user: root
-  when: server_config_multica_enabled and server_config_android_enabled
-  ansible.builtin.user:
-    name: "{{ ansible_user_id }}"
-    groups:
-      - kvm
-    append: true
-  tags:
-    - android
-    - multica
-    - users
-
 - name: Inspect the pinned Multica CLI
   become: true
   become_user: root
