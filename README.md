@@ -134,12 +134,10 @@ To inspect a remote host from a trusted control machine, create the ignored file
 
 - a small package set for administration and diagnostics
 - shared libraries and fonts for project-scoped Playwright Chromium headless tests
-- pinned rootless Docker Engine, Compose, and Buildx without a rootful socket
+- pinned rootless Docker Engine, Compose, and Buildx for the managed user, without a rootful socket
 - a path-bound AppArmor user-namespace profile for the pinned rootlesskit binary
-- a private Multica self-host stack on Tailscale HTTPS port `8444`
-- Multica agents running as the managed user with a separate Pi configuration
-- twice-daily Multica project synchronization in `Europe/Paris`
-- pinned Java and Android SDK tools with a KVM-backed headless API 35 AVD
+- pinned Java and Android SDK tools with the API 35 x86-64 system image
+- KVM access for project-owned Android virtual devices
 - daily Ubuntu security updates without automatic reboot
 - an 8 GiB swap file
 - weekly SSD TRIM
@@ -166,7 +164,7 @@ Browser tests use the Chromium headless shell pinned by each project's Playwrigh
 
 The playbook installs Supervisor, disables its distribution-wide daemon, and starts the private Citadel controller. Citadel owns application definitions, lifecycle, logs, health checks, and Tailscale Serve routes. Application repositories and Citadel runtime data remain outside `server-config`.
 
-Multica's server checkout and private environment live outside this repository. The tracked configuration pins its CLI, source commit, images, reverse proxy, daemon, Android runtime, agent instructions, helper commands, and timers. Follow [`docs/multica.md`](docs/multica.md) for the interactive logins and first activation.
+Application repositories and runtime configuration live outside `server-config`. The local `~/dev/multica` repository owns the Multica stack, CLI, agents, scheduler, Android virtual device, and application diagnostics. See [`docs/multica.md`](docs/multica.md) for the ownership boundary and migration notes.
 
 ## Not managed yet
 
@@ -175,6 +173,7 @@ Multica's server checkout and private environment live outside this repository. 
 - Maestro or a system browser
 - application repositories, user data, torrents, or off-host backups
 - Multica, Pi, GitHub, Tailscale, or Android emulator sessions and credentials
+- application Compose files, agent definitions, schedulers, or service data
 - tailnet policy and Citadel route activation
 - Vercel authentication
 
@@ -182,7 +181,7 @@ Add these only after the server needs them.
 
 ## Version updates
 
-Downloaded bootstrap tools use versions and checksums declared in `group_vars/all.yml`. User runtimes and CLIs use exact versions in `config/mise/config.toml`. Update these files through a reviewed commit, then run `./bin/check` and `./bin/apply`. Do not run `mise use -g`, `pi update`, or global npm installs directly on the host.
+Downloaded host tools use versions and checksums declared in `group_vars/all.yml`. User runtimes and CLIs use exact versions in `config/mise/config.toml`. Update these files through a reviewed commit, then run `./bin/check` and `./bin/apply`. Application versions belong in their project repositories. Do not run `mise use -g`, `pi update`, or global npm installs directly on the host.
 
 ## Secrets
 
