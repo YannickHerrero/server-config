@@ -220,7 +220,7 @@ else
     fail "mise is not available"
 fi
 
-for command_name in rustc cargo gh vercel nvim; do
+for command_name in rustc cargo gh eas vercel nvim; do
     if command -v "$command_name" >/dev/null 2>&1; then
         printf '%s: %s\n' "$command_name" "$($command_name --version 2>&1 | head -1)"
     else

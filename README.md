@@ -142,7 +142,7 @@ To inspect a remote host from a trusted control machine, create the ignored file
 - an 8 GiB swap file
 - weekly SSD TRIM
 - UTC system time
-- pinned mise, Node.js, Bun, pnpm, Rust, Pi, Herdr, gh, Vercel, Neovim, LSP, formatter, and terminal CLI versions
+- pinned mise, Node.js, Bun, pnpm, Rust, Pi, Herdr, gh, EAS, Vercel, Neovim, LSP, formatter, and terminal CLI versions
 - Tailscale installation with interactive authentication
 - UFW with public traffic denied and SSH allowed only through Tailscale
 - Mosh sessions through Tailscale only
