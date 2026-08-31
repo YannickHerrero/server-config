@@ -1,0 +1,14 @@
+[Service]
+UMask=0007
+ExecStart=
+ExecStart=/usr/bin/transmission-daemon --foreground --log-error \
+  --config-dir {{ server_config_transmission_config_dir }} \
+  --download-dir {{ server_config_transmission_download_dir }} \
+  --incomplete-dir {{ server_config_transmission_incomplete_dir }} \
+  --rpc-bind-address {{ server_config_transmission_rpc_address }} \
+  --port {{ server_config_transmission_rpc_port }} \
+  --allowed {{ server_config_transmission_rpc_address }},::1 \
+  --no-auth \
+  --peerport {{ server_config_transmission_peer_port }} \
+  --no-portmap \
+  --utp

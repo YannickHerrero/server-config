@@ -1,0 +1,291 @@
+---
+- name: Install Transmission and its local control tools
+  become: true
+  become_user: root
+  ansible.builtin.apt:
+    name: "{{ server_config_transmission_packages }}"
+    state: present
+    policy_rc_d: 101
+  register: server_config_transmission_package_install
+  tags:
+    - packages
+    - transmission
+
+- name: Inspect the Transmission service account
+  ansible.builtin.command:
+    argv:
+      - getent
+      - passwd
+      - "{{ server_config_transmission_user }}"
+  register: server_config_transmission_account
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  tags:
+    - transmission
+
+- name: Report the planned Transmission account creation
+  when:
+    - ansible_check_mode
+    - server_config_transmission_account.rc != 0
+  ansible.builtin.debug:
+    msg: The Transmission package will create its isolated service account during application.
+  tags:
+    - transmission
+
+- name: Create the private downloads parent directory
+  when: server_config_transmission_account.rc == 0
+  ansible.builtin.file:
+    path: "{{ ansible_user_dir }}/Downloads"
+    owner: "{{ ansible_user_id }}"
+    group: "{{ ansible_user_gid }}"
+    mode: "0710"
+    state: directory
+  tags:
+    - transmission
+
+- name: Create Transmission data directories
+  become: true
+  become_user: root
+  when: server_config_transmission_account.rc == 0
+  ansible.builtin.file:
+    path: "{{ item }}"
+    owner: "{{ ansible_user_id }}"
+    group: "{{ server_config_transmission_group }}"
+    mode: "2770"
+    state: directory
+  loop:
+    - "{{ server_config_transmission_download_dir }}"
+    - "{{ server_config_transmission_incomplete_dir }}"
+  tags:
+    - transmission
+
+- name: Read Transmission parent directory ACLs
+  become: true
+  become_user: root
+  when:
+    - server_config_transmission_account.rc == 0
+    - not ansible_check_mode
+  ansible.builtin.command:
+    argv:
+      - getfacl
+      - --absolute-names
+      - --omit-header
+      - "{{ item }}"
+  loop:
+    - "{{ ansible_user_dir }}"
+    - "{{ ansible_user_dir }}/Downloads"
+  register: server_config_transmission_parent_acls
+  changed_when: false
+  tags:
+    - transmission
+
+- name: Grant Transmission traversal to its data directory
+  become: true
+  become_user: root
+  when:
+    - server_config_transmission_account.rc == 0
+    - not ansible_check_mode
+    - >-
+      'user:' + server_config_transmission_user + ':--x'
+      not in item.stdout_lines
+  ansible.builtin.command:
+    argv:
+      - setfacl
+      - --modify
+      - "user:{{ server_config_transmission_user }}:--x"
+      - "{{ item.item }}"
+  loop: "{{ server_config_transmission_parent_acls.results }}"
+  changed_when: true
+  tags:
+    - transmission
+
+- name: Read Transmission data directory ACLs
+  become: true
+  become_user: root
+  when:
+    - server_config_transmission_account.rc == 0
+    - not ansible_check_mode
+  ansible.builtin.command:
+    argv:
+      - getfacl
+      - --absolute-names
+      - --omit-header
+      - "{{ item }}"
+  loop:
+    - "{{ server_config_transmission_download_dir }}"
+    - "{{ server_config_transmission_incomplete_dir }}"
+  register: server_config_transmission_data_acls
+  changed_when: false
+  tags:
+    - transmission
+
+- name: Set private inherited Transmission data ACLs
+  become: true
+  become_user: root
+  when:
+    - server_config_transmission_account.rc == 0
+    - not ansible_check_mode
+    - >-
+      (item.stdout_lines | reject('equalto', '') | list | sort)
+      != (server_config_transmission_expected_acl | sort)
+  ansible.builtin.command:
+    argv:
+      - setfacl
+      - --set
+      - "{{ server_config_transmission_acl_spec | join(',') }}"
+      - "{{ item.item }}"
+  loop: "{{ server_config_transmission_data_acls.results }}"
+  vars:
+    server_config_transmission_acl_spec:
+      - "u::rwx"
+      - "g::rwx"
+      - "m::rwx"
+      - "o::---"
+      - "d:u::rwx"
+      - "d:u:{{ ansible_user_id }}:rwx"
+      - "d:g::rwx"
+      - "d:m::rwx"
+      - "d:o::---"
+    server_config_transmission_expected_acl:
+      - "user::rwx"
+      - "group::rwx"
+      - "mask::rwx"
+      - "other::---"
+      - "default:user::rwx"
+      - "default:user:{{ ansible_user_id }}:rwx"
+      - "default:group::rwx"
+      - "default:mask::rwx"
+      - "default:other::---"
+  changed_when: true
+  tags:
+    - transmission
+
+- name: Create the Transmission systemd override directory
+  become: true
+  become_user: root
+  ansible.builtin.file:
+    path: /etc/systemd/system/transmission-daemon.service.d
+    owner: root
+    group: root
+    mode: "0755"
+    state: directory
+  tags:
+    - transmission
+
+- name: Configure the isolated Transmission daemon
+  become: true
+  become_user: root
+  ansible.builtin.template:
+    src: transmission-daemon.service.conf.j2
+    dest: /etc/systemd/system/transmission-daemon.service.d/server-config.conf
+    owner: root
+    group: root
+    mode: "0644"
+  register: server_config_transmission_service_override
+  tags:
+    - transmission
+
+- name: Reload systemd after configuring Transmission
+  become: true
+  become_user: root
+  when: server_config_transmission_service_override.changed
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  tags:
+    - transmission
+
+- name: Enable and start Transmission
+  become: true
+  become_user: root
+  when: server_config_transmission_account.rc == 0
+  ansible.builtin.systemd_service:
+    name: transmission-daemon.service
+    enabled: true
+    state: >-
+      {{
+        'restarted'
+        if server_config_transmission_package_install.changed
+        or server_config_transmission_service_override.changed
+        else 'started'
+      }}
+  tags:
+    - transmission
+
+- name: Read the Transmission session configuration
+  when:
+    - server_config_transmission_account.rc == 0
+    - not ansible_check_mode
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/transmission-remote
+      - "{{ server_config_transmission_rpc_address }}:{{ server_config_transmission_rpc_port }}"
+      - --json
+      - --session-info
+  register: server_config_transmission_session
+  changed_when: false
+  tags:
+    - transmission
+
+- name: Limit Transmission uploads to 10 MiB per second
+  when:
+    - server_config_transmission_account.rc == 0
+    - not ansible_check_mode
+    - >-
+      not (server_config_transmission_session.stdout | from_json).arguments['speed-limit-up-enabled']
+      or (server_config_transmission_session.stdout | from_json).arguments['speed-limit-up']
+      != server_config_transmission_upload_limit_kbps
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/transmission-remote
+      - "{{ server_config_transmission_rpc_address }}:{{ server_config_transmission_rpc_port }}"
+      - --uplimit
+      - "{{ server_config_transmission_upload_limit_kbps | string }}"
+  changed_when: true
+  tags:
+    - transmission
+
+- name: Verify the Transmission session configuration
+  when:
+    - server_config_transmission_account.rc == 0
+    - not ansible_check_mode
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/transmission-remote
+      - "{{ server_config_transmission_rpc_address }}:{{ server_config_transmission_rpc_port }}"
+      - --json
+      - --session-info
+  register: server_config_transmission_verify
+  changed_when: false
+  failed_when: >-
+    (server_config_transmission_verify.stdout | from_json).result != 'success'
+    or (server_config_transmission_verify.stdout | from_json).arguments['download-dir']
+    != server_config_transmission_download_dir
+    or (server_config_transmission_verify.stdout | from_json).arguments['peer-port']
+    != server_config_transmission_peer_port
+    or (server_config_transmission_verify.stdout | from_json).arguments['port-forwarding-enabled']
+    or not (server_config_transmission_verify.stdout | from_json).arguments['speed-limit-up-enabled']
+    or (server_config_transmission_verify.stdout | from_json).arguments['speed-limit-up']
+    != server_config_transmission_upload_limit_kbps
+  tags:
+    - transmission
+
+- name: Read the Transmission RPC listener
+  when:
+    - server_config_transmission_account.rc == 0
+    - not ansible_check_mode
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/ss
+      - -H
+      - -ltn
+      - "sport = :{{ server_config_transmission_rpc_port }}"
+  register: server_config_transmission_rpc_listener
+  changed_when: false
+  failed_when: >-
+    server_config_transmission_rpc_listener.stdout_lines | length != 1
+    or server_config_transmission_rpc_address
+    + ':' + (server_config_transmission_rpc_port | string)
+    not in server_config_transmission_rpc_listener.stdout
+  tags:
+    - transmission

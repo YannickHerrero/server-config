@@ -74,6 +74,14 @@ server-config-window status # Inspect an active maintenance window
 
 `converge` asks for sudo once, shows the dry-run diff, waits for explicit approval, applies twice, and fails unless the second application reports `changed=0 failed=0`. Its latest logs are stored with private permissions in `~/.local/state/server-config/logs`.
 
+## Transmission
+
+The server runs the Ubuntu Transmission daemon under its isolated `debian-transmission` account. Normandy controls it through the unauthenticated RPC endpoint on `127.0.0.1:9091`; the RPC listener is never exposed through UFW or Tailscale Serve.
+
+Completed downloads live under `~/Downloads/Torrents`. Private ACLs let Transmission write there while the managed user retains access through Normandy's file browser. The daemon listens for peers on TCP and UDP port `51413`, but UFW still blocks incoming traffic. UPnP and NAT-PMP are disabled. The global upload limit is approximately 10 MiB/s.
+
+`server-config` manages the daemon, directories, ACLs, and network policy. Torrent metadata and downloaded files remain host data and never enter this repository. Citadel does not manage Transmission because preserving the daemon's dedicated Unix account is safer than running its public peer listener as the interactive user.
+
 ## Remote Mosh sessions
 
 Install Tailscale and a Mosh-capable terminal on the phone or tablet, then connect the device to the same tailnet. With MagicDNS enabled, use the short hostname:
@@ -146,6 +154,7 @@ To inspect a remote host from a trusted control machine, create the ignored file
 - Tailscale installation with interactive authentication
 - UFW with public traffic denied and SSH allowed only through Tailscale
 - Mosh sessions through Tailscale only
+- an isolated Transmission daemon with loopback-only RPC
 - password-based OpenSSH for the managed user, with root login disabled
 - portable Zsh configuration with pinned plugins and a transparent prompt
 - optional local Git identity without publishing personal metadata
@@ -171,7 +180,7 @@ Application repositories and runtime configuration live outside `server-config`.
 - Ubuntu release upgrades
 - tailnet policy, Tailscale authentication, key expiry, or passwordless sudo policy
 - Maestro or a system browser
-- application repositories, user data, torrents, or off-host backups
+- application repositories, downloaded torrent payloads, user data, or off-host backups
 - Multica, Pi, GitHub, Tailscale, or Android emulator sessions and credentials
 - application Compose files, agent definitions, schedulers, or service data
 - tailnet policy and Citadel route activation

@@ -293,6 +293,11 @@
       tags:
         - herdr
 
+    - name: Configure the isolated Transmission daemon
+      ansible.builtin.import_tasks: tasks/transmission.yml
+      tags:
+        - transmission
+
     - name: Configure tracked user settings
       ansible.builtin.import_tasks: tasks/user-config.yml
       tags:

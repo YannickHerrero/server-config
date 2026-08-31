@@ -9,6 +9,10 @@ EXPECTED_HERDR_VERSION=$(awk -F'"' '/^server_config_herdr_version:/ {print $2}' 
 EXPECTED_ONBOARDING_VERSION=$(awk -F'"' '/^server_config_onboarding_version:/ {print $2}' "$ROOT_DIR/group_vars/all.yml")
 EXPECTED_SWAP_PATH=$(awk '/^server_config_swap_path:/ {print $2}' "$ROOT_DIR/group_vars/all.yml")
 EXPECTED_MOSH_PORT_RANGE=$(awk -F'"' '/^server_config_mosh_port_range:/ {print $2}' "$ROOT_DIR/group_vars/all.yml")
+EXPECTED_TRANSMISSION_RPC_PORT=$(awk '/^server_config_transmission_rpc_port:/ {print $2}' "$ROOT_DIR/group_vars/all.yml")
+EXPECTED_TRANSMISSION_PEER_PORT=$(awk '/^server_config_transmission_peer_port:/ {print $2}' "$ROOT_DIR/group_vars/all.yml")
+EXPECTED_TRANSMISSION_UPLOAD_LIMIT=$(awk '/^server_config_transmission_upload_limit_kbps:/ {print $2}' "$ROOT_DIR/group_vars/all.yml")
+EXPECTED_TRANSMISSION_DOWNLOAD_DIR="$HOME/Downloads/Torrents"
 EXPECTED_CITADEL_ENABLED=$(awk '/^server_config_citadel_enabled:/ {print $2}' "$ROOT_DIR/group_vars/all.yml")
 EXPECTED_CITADEL_PORT=$(awk '/^server_config_citadel_port:/ {print $2}' "$ROOT_DIR/group_vars/all.yml")
 EXPECTED_DOCKER_VERSION=$(awk -F'"' '/^server_config_docker_version:/ {print $2}' "$ROOT_DIR/group_vars/all.yml")
@@ -227,6 +231,57 @@ for command_name in rustc cargo gh eas vercel nvim; do
         fail "$command_name is not available"
     fi
 done
+
+section "Transmission"
+transmission_package_count=$(dpkg-query -W -f='${db:Status-Status}\n' \
+    transmission-daemon transmission-cli 2>/dev/null | grep -c '^installed$' || true)
+if [[ $transmission_package_count -eq 2 ]]; then
+    printf 'Transmission: %s\n' "$(transmission-daemon --version 2>&1 | head -1)"
+    pass "Transmission daemon and control tools are installed"
+else
+    fail "Transmission daemon or control tools are missing"
+fi
+if systemctl is-enabled --quiet transmission-daemon.service \
+    && systemctl is-active --quiet transmission-daemon.service; then
+    pass "transmission-daemon.service is enabled and active"
+else
+    fail "transmission-daemon.service is not enabled and active"
+fi
+if [[ -d $EXPECTED_TRANSMISSION_DOWNLOAD_DIR && -w $EXPECTED_TRANSMISSION_DOWNLOAD_DIR ]]; then
+    pass "Transmission downloads are available to the managed user"
+else
+    fail "Transmission downloads are unavailable at $EXPECTED_TRANSMISSION_DOWNLOAD_DIR"
+fi
+rpc_listeners=$(ss -H -ltn "sport = :$EXPECTED_TRANSMISSION_RPC_PORT")
+if [[ $(wc -l <<<"$rpc_listeners") -eq 1 ]] \
+    && grep -Fq "127.0.0.1:$EXPECTED_TRANSMISSION_RPC_PORT" <<<"$rpc_listeners"; then
+    pass "Transmission RPC listens only on IPv4 loopback"
+else
+    fail "Transmission RPC is missing or listens beyond IPv4 loopback"
+fi
+if transmission_session=$(transmission-remote \
+    "127.0.0.1:$EXPECTED_TRANSMISSION_RPC_PORT" --json --session-info 2>/dev/null) \
+    && jq -e \
+        --arg downloadDir "$EXPECTED_TRANSMISSION_DOWNLOAD_DIR" \
+        --argjson peerPort "$EXPECTED_TRANSMISSION_PEER_PORT" \
+        --argjson uploadLimit "$EXPECTED_TRANSMISSION_UPLOAD_LIMIT" \
+        '.result == "success"
+            and .arguments["download-dir"] == $downloadDir
+            and .arguments["peer-port"] == $peerPort
+            and .arguments["port-forwarding-enabled"] == false
+            and .arguments["speed-limit-up-enabled"] == true
+            and .arguments["speed-limit-up"] == $uploadLimit' \
+        <<<"$transmission_session" >/dev/null; then
+    pass "Transmission session settings match server-config"
+else
+    fail "Transmission session settings do not match server-config"
+fi
+if ss -H -ltn "sport = :$EXPECTED_TRANSMISSION_PEER_PORT" | grep -q . \
+    && ss -H -lun "sport = :$EXPECTED_TRANSMISSION_PEER_PORT" | grep -q .; then
+    pass "Transmission listens for TCP and UDP peers"
+else
+    fail "Transmission is not listening for both TCP and UDP peers"
+fi
 
 section "Developer identity"
 if git config --global --includes --get user.name >/dev/null 2>&1 \

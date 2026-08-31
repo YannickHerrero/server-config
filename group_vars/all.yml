@@ -45,6 +45,21 @@ server_config_tailscale_repository: >-
 server_config_tailscale_port: 41641
 server_config_mosh_port_range: "60000:61000"
 
+server_config_transmission_user: debian-transmission
+server_config_transmission_group: debian-transmission
+server_config_transmission_config_dir: /var/lib/transmission-daemon/.config/transmission-daemon
+server_config_transmission_download_dir: "{{ ansible_user_dir }}/Downloads/Torrents"
+server_config_transmission_incomplete_dir: "{{ server_config_transmission_download_dir }}/.incomplete"
+server_config_transmission_rpc_address: 127.0.0.1
+server_config_transmission_rpc_port: 9091
+server_config_transmission_peer_port: 51413
+# Transmission uses decimal kB/s. This is the nearest integer to 10 MiB/s.
+server_config_transmission_upload_limit_kbps: 10486
+server_config_transmission_packages:
+  - acl
+  - transmission-cli
+  - transmission-daemon
+
 server_config_swap_enabled: true
 server_config_swap_path: /swap.img
 server_config_swap_size_mb: 8192
