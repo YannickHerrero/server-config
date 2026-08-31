@@ -78,7 +78,7 @@ server-config-window status # Inspect an active maintenance window
 
 The server runs the Ubuntu Transmission daemon under its isolated `debian-transmission` account. Normandy controls it through the unauthenticated RPC endpoint on `127.0.0.1:9091`; the RPC listener is never exposed through UFW or Tailscale Serve.
 
-Completed downloads live under `~/Downloads/Torrents`. Private ACLs let Transmission write there while the managed user retains access through Normandy's file browser. The daemon listens for peers on TCP and UDP port `51413`, but UFW still blocks incoming traffic. UPnP and NAT-PMP are disabled. The global upload limit is approximately 10 MiB/s.
+Completed downloads live under `~/Downloads/Torrents`. Private ACLs let Transmission write there while the managed user retains access through Normandy's file browser. Incoming peer traffic uses public TCP and UDP port `51413`, with UPnP and NAT-PMP disabled. The global upload limit is approximately 10 MiB/s.
 
 `server-config` manages the daemon, directories, ACLs, and network policy. Torrent metadata and downloaded files remain host data and never enter this repository. Citadel does not manage Transmission because preserving the daemon's dedicated Unix account is safer than running its public peer listener as the interactive user.
 
@@ -152,9 +152,9 @@ To inspect a remote host from a trusted control machine, create the ignored file
 - UTC system time
 - pinned mise, Node.js, Bun, pnpm, Rust, Pi, Herdr, gh, EAS, Vercel, Neovim, LSP, formatter, and terminal CLI versions
 - Tailscale installation with interactive authentication
-- UFW with public traffic denied and SSH allowed only through Tailscale
+- UFW with public traffic denied except for Transmission peer traffic, with SSH allowed only through Tailscale
 - Mosh sessions through Tailscale only
-- an isolated Transmission daemon with loopback-only RPC
+- an isolated Transmission daemon with loopback-only RPC and public peer traffic
 - password-based OpenSSH for the managed user, with root login disabled
 - portable Zsh configuration with pinned plugins and a transparent prompt
 - optional local Git identity without publishing personal metadata

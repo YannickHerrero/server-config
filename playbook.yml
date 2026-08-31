@@ -618,6 +618,31 @@
         - access
         - firewall
 
+    - name: Allow public Transmission peer traffic
+      become: true
+      become_user: root
+      ansible.builtin.command:
+        argv: >-
+          {{
+            ['ufw']
+            + (['--dry-run'] if ansible_check_mode else [])
+            + [
+              'allow', 'in', 'to', 'any',
+              'port', server_config_transmission_peer_port | string,
+              'proto', item, 'comment', 'Transmission peers'
+            ]
+          }}
+      loop:
+        - tcp
+        - udp
+      register: server_config_ufw_transmission_rules
+      changed_when: "'Rules updated' in server_config_ufw_transmission_rules.stdout"
+      check_mode: false
+      tags:
+        - access
+        - firewall
+        - transmission
+
     - name: Read the configured UFW commands
       become: true
       become_user: root
@@ -728,7 +753,13 @@
           - >-
             (server_config_tailscale_port | string) + '/udp on '
             + ansible_default_ipv4.interface in server_config_ufw_final.stdout
-        fail_msg: UFW does not match the managed private-access policy.
+          - >-
+            (server_config_transmission_peer_port | string) + '/tcp'
+            in server_config_ufw_final.stdout
+          - >-
+            (server_config_transmission_peer_port | string) + '/udp'
+            in server_config_ufw_final.stdout
+        fail_msg: UFW does not match the managed access policy.
       tags:
         - access
         - firewall
