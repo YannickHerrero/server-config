@@ -1,7 +1,8 @@
 [Service]
+Type=simple
 UMask=0007
 ExecStart=
-ExecStart=/usr/bin/transmission-daemon --foreground --log-error \
+ExecStart=/usr/bin/transmission-daemon --foreground --log-level=error \
   --config-dir {{ server_config_transmission_config_dir }} \
   --download-dir {{ server_config_transmission_download_dir }} \
   --incomplete-dir {{ server_config_transmission_incomplete_dir }} \

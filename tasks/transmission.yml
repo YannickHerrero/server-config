@@ -224,6 +224,9 @@
       - --session-info
   register: server_config_transmission_session
   changed_when: false
+  retries: 10
+  delay: 1
+  until: server_config_transmission_session.rc == 0
   tags:
     - transmission
 
