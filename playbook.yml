@@ -754,9 +754,11 @@
             (server_config_tailscale_port | string) + '/udp on '
             + ansible_default_ipv4.interface in server_config_ufw_final.stdout
           - >-
+            ansible_check_mode or
             (server_config_transmission_peer_port | string) + '/tcp'
             in server_config_ufw_final.stdout
           - >-
+            ansible_check_mode or
             (server_config_transmission_peer_port | string) + '/udp'
             in server_config_ufw_final.stdout
         fail_msg: UFW does not match the managed access policy.
