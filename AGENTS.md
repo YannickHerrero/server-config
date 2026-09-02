@@ -31,7 +31,7 @@ Work in three separate stages unless the user explicitly asks to continue:
 
 After an application, run `./bin/check` again. A converged host should report `changed=0`.
 
-During an active maintenance window, use only `server-config-window converge`. The broker enforces validation, a dry run, application, `changed=0`, and doctor. It requires a clean committed `main`, refuses a checkout behind `origin/main`, and records root-owned logs. A normal window blocks access, firewall, SSH, Tailscale, sudo, user-account, Citadel, and broker tasks. The user must open a sensitive window to authorize host-access categories. Citadel and broker updates always require the ordinary interactive apply path.
+During an active maintenance window, use only `server-config-window converge`. For a commit confined to one allowlisted non-sensitive area, use `server-config-window converge --scope NAME`; use full convergence for cross-cutting or host-access changes. The broker enforces validation, a dry run, application, `changed=0`, and doctor. It requires a clean committed `main`, refuses a checkout behind `origin/main`, and records root-owned logs. Scoped convergence always blocks access, firewall, SSH, Tailscale, sudo, and user-account tasks. A normal window blocks those tasks plus Citadel and broker tasks. The user must open a sensitive window to authorize host-access categories during full convergence. Citadel and broker updates always require the ordinary interactive apply path.
 
 ## Design rules
 

@@ -80,6 +80,23 @@ class MaintenanceWindowTests(unittest.TestCase):
         self.assertIn("maintenance-window", skipped)
         self.assertIn("citadel", skipped)
 
+    def test_scoped_convergence_uses_only_allowlisted_non_sensitive_tags(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            config = self.config(Path(temporary), sensitive=True)
+            command = window.ansible_command(config, check=True, scope="transmission")
+        self.assertEqual(command[command.index("--tags") + 1], "transmission")
+        skipped = command[command.index("--skip-tags") + 1].split(",")
+        self.assertIn("access", skipped)
+        self.assertIn("firewall", skipped)
+        with self.assertRaisesRegex(window.WindowError, "unsupported convergence scope"):
+            window.ansible_command(config, check=True, scope="ssh")
+
+    def test_converge_parser_exposes_only_allowlisted_scopes(self):
+        arguments = window.parser().parse_args(["converge", "--scope", "pi"])
+        self.assertEqual(arguments.scope, "pi")
+        self.assertNotIn("ssh", window.CONVERGENCE_SCOPES)
+        self.assertNotIn("firewall", window.CONVERGENCE_SCOPES)
+
     def test_repo_preflight_accepts_clean_main_ahead_of_origin(self):
         commit = "a" * 40
         responses = iter(
@@ -153,13 +170,45 @@ class MaintenanceWindowTests(unittest.TestCase):
                     label="Timeout",
                 )
             self.assertTrue(result.timed_out)
+            self.assertGreater(result.duration_seconds, 0)
             self.assertLess(time.monotonic() - started, 2)
+            self.assertRegex((root / "timeout.log").read_text(), r"\[Timeout finished in [0-9.]+s\]")
 
     def test_convergence_recap_requires_changed_zero(self):
         passing = "localhost : ok=10 changed=0 unreachable=0 failed=0 skipped=1 rescued=0 ignored=0"
         failing = "localhost : ok=10 changed=1 unreachable=0 failed=0 skipped=1 rescued=0 ignored=0"
         self.assertIsNotNone(window.RECAP_RE.search(passing))
         self.assertIsNone(window.RECAP_RE.search(failing))
+
+    def test_scoped_convergence_uses_the_scope_for_every_ansible_pass(self):
+        recap = "localhost : ok=10 changed=0 unreachable=0 failed=0 skipped=1 rescued=0 ignored=0"
+        results = [
+            window.CommandResult(0, ""),
+            window.CommandResult(0, ""),
+            window.CommandResult(0, ""),
+            window.CommandResult(0, recap),
+            window.CommandResult(0, ""),
+        ]
+        with tempfile.TemporaryDirectory() as temporary:
+            config = self.config(Path(temporary))
+            with (
+                mock.patch.object(window, "require_repo_state", return_value="a" * 40),
+                mock.patch.object(window, "run_command", side_effect=results) as run,
+            ):
+                success, message = window.run_convergence(
+                    config,
+                    deadline=time.monotonic() + 5,
+                    connection=None,
+                    scope="pi",
+                )
+            ansible_commands = [call.args[0] for call in run.call_args_list if call.args[0][0] == window.ANSIBLE_PLAYBOOK]
+            self.assertEqual(len(ansible_commands), 3)
+            for command in ansible_commands:
+                self.assertEqual(command[command.index("--tags") + 1], "pi")
+            audit_records = [json.loads(line) for line in (config.log_dir / "maintenance-window.jsonl").read_text().splitlines()]
+        self.assertTrue(success)
+        self.assertIn("converged scope pi", message)
+        self.assertEqual([record["scope"] for record in audit_records], ["pi", "pi"])
 
     def test_systemd_template_preserves_expiry_and_controller_boundaries(self):
         content = (ROOT / "templates/server-config-maintenance-window@.service.j2").read_text()
@@ -287,6 +336,24 @@ class MaintenanceWindowTests(unittest.TestCase):
         self.assertTrue(window.peer_is_authorized(0, 1000))
         self.assertFalse(window.peer_is_authorized(1001, 1000))
 
+    def test_daemon_validates_scopes_received_over_the_socket(self):
+        server, client = window.socket.socketpair()
+        with server, client:
+            client.sendall(b'{"command":"converge","scope":"pi"}\n')
+            self.assertEqual(window.receive_request(server), window.BrokerRequest("converge", "pi"))
+
+        server, client = window.socket.socketpair()
+        with server, client:
+            client.sendall(b'{"command":"converge","scope":"ssh"}\n')
+            with self.assertRaisesRegex(window.WindowError, "unsupported convergence scope"):
+                window.receive_request(server)
+
+        server, client = window.socket.socketpair()
+        with server, client:
+            client.sendall(b'{"command":"status","scope":"pi"}\n')
+            with self.assertRaisesRegex(window.WindowError, "only supported for convergence"):
+                window.receive_request(server)
+
     def test_client_streams_output_and_requires_a_final_result(self):
         with tempfile.TemporaryDirectory() as temporary:
             socket_path = Path(temporary) / "window.sock"
@@ -298,7 +365,8 @@ class MaintenanceWindowTests(unittest.TestCase):
                 connection, _ = listener.accept()
                 with connection:
                     request = connection.recv(4096)
-                    self.assertIn(b'"command": "status"', request)
+                    self.assertIn(b'"command": "converge"', request)
+                    self.assertIn(b'"scope": "pi"', request)
                     window.send_message(connection, {"type": "output", "data": "checked\n"})
                     window.send_message(connection, {"type": "result", "ok": True, "message": "open"})
                 listener.close()
@@ -307,7 +375,7 @@ class MaintenanceWindowTests(unittest.TestCase):
             thread.start()
             output = io.StringIO()
             with window.contextlib.redirect_stdout(output):
-                result = window.request("status", socket_path)
+                result = window.request("converge", socket_path, scope="pi")
             thread.join(timeout=2)
             self.assertFalse(thread.is_alive())
             self.assertEqual(output.getvalue(), "checked\n")

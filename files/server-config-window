@@ -41,6 +41,18 @@ CITADEL_PROGRAM = "citadel-dashboard"
 WINDOW_UNIT_PREFIX = "server-config-maintenance-window"
 ALWAYS_SKIPPED_TAGS = ("citadel", "maintenance-window")
 SENSITIVE_TAGS = ("access", "firewall", "ssh", "sudo", "tailscale", "users")
+CONVERGENCE_SCOPES = {
+    "android": ("android",),
+    "docker": ("docker",),
+    "herdr": ("herdr",),
+    "mise": ("mise",),
+    "neovim": ("neovim",),
+    "onboarding": ("onboarding",),
+    "pi": ("pi",),
+    "shell": ("shell",),
+    "transmission": ("transmission",),
+    "user-config": ("user-config",),
+}
 RECAP_RE = re.compile(
     r"^[A-Za-z0-9_.-]+\s+:\s+ok=\d+\s+changed=0\s+unreachable=0\s+failed=0",
     re.MULTILINE,
@@ -86,6 +98,13 @@ class CommandResult:
     returncode: int
     output: str
     timed_out: bool = False
+    duration_seconds: float = 0
+
+
+@dataclass(frozen=True)
+class BrokerRequest:
+    command: str
+    scope: str | None = None
 
 
 def parse_authorization(value: str) -> Authorization:
@@ -117,6 +136,13 @@ def format_duration(seconds: int) -> str:
     return " ".join(parts)
 
 
+def format_elapsed(seconds: float) -> str:
+    if seconds < 60:
+        return f"{seconds:.1f}s"
+    minutes, seconds = divmod(seconds, 60)
+    return f"{int(minutes)}m {seconds:.1f}s"
+
+
 def send_message(connection: socket.socket | None, payload: dict[str, object]) -> None:
     if connection is None:
         return
@@ -144,7 +170,16 @@ def skipped_tags(allow_sensitive: bool) -> tuple[str, ...]:
     return (*ALWAYS_SKIPPED_TAGS, *SENSITIVE_TAGS)
 
 
-def ansible_command(config: BrokerConfig, *, check: bool) -> list[str]:
+def convergence_tags(scope: str | None) -> tuple[str, ...]:
+    if scope is None:
+        return ()
+    try:
+        return CONVERGENCE_SCOPES[scope]
+    except KeyError as error:
+        raise WindowError(f"unsupported convergence scope: {scope}") from error
+
+
+def ansible_command(config: BrokerConfig, *, check: bool, scope: str | None = None) -> list[str]:
     command = [
         ANSIBLE_PLAYBOOK,
         "--inventory",
@@ -152,10 +187,14 @@ def ansible_command(config: BrokerConfig, *, check: bool) -> list[str]:
     ]
     if check:
         command.extend(("--check", "--diff"))
+    tags = convergence_tags(scope)
+    if tags:
+        command.extend(("--tags", ",".join(tags)))
+    allow_sensitive = config.authorization.allow_sensitive and scope is None
     command.extend(
         (
             "--skip-tags",
-            ",".join(skipped_tags(config.authorization.allow_sensitive)),
+            ",".join(skipped_tags(allow_sensitive)),
             "--extra-vars",
             "server_config_maintenance_broker=true",
             "--extra-vars",
@@ -187,6 +226,7 @@ def run_command(
     log_file,
     label: str,
 ) -> CommandResult:
+    started_at = time.monotonic()
     header = f"\n== {label} ==\n$ {' '.join(command)}\n"
     log_file.write(header.encode())
     log_file.flush()
@@ -237,7 +277,17 @@ def run_command(
         timeout_message = "\nMaintenance window expired; terminated the running command.\n"
         log_file.write(timeout_message.encode())
         send_message(connection, {"type": "output", "data": timeout_message})
-    return CommandResult(returncode=returncode, output=output_tail.decode(errors="replace"), timed_out=timed_out)
+    duration_seconds = time.monotonic() - started_at
+    timing_message = f"\n[{label} finished in {format_elapsed(duration_seconds)}]\n"
+    log_file.write(timing_message.encode())
+    log_file.flush()
+    send_message(connection, {"type": "output", "data": timing_message})
+    return CommandResult(
+        returncode=returncode,
+        output=output_tail.decode(errors="replace"),
+        timed_out=timed_out,
+        duration_seconds=duration_seconds,
+    )
 
 
 def capture_as_user(config: BrokerConfig, command: Sequence[str]) -> subprocess.CompletedProcess[str]:
@@ -455,8 +505,11 @@ def run_convergence(
     *,
     deadline: float,
     connection: socket.socket | None,
+    scope: str | None = None,
 ) -> tuple[bool, str]:
+    started_at = time.monotonic()
     try:
+        convergence_tags(scope)
         commit = require_repo_state(config)
     except WindowError as error:
         return False, str(error)
@@ -476,10 +529,16 @@ def run_convergence(
 
     steps: list[tuple[str, list[str]]] = [
         ("Validate", as_user(config, [str(config.repo / "bin/validate")])),
-        ("Dry run", ansible_command(config, check=True)),
+        ("Dry run", ansible_command(config, check=True, scope=scope)),
     ]
 
-    audit(config.log_dir, "converge-start", commit=commit, sensitive=config.authorization.allow_sensitive)
+    audit(
+        config.log_dir,
+        "converge-start",
+        commit=commit,
+        scope=scope or "full",
+        sensitive=config.authorization.allow_sensitive,
+    )
     success = False
     message = "convergence failed"
     with os.fdopen(descriptor, "wb") as log_file:
@@ -505,7 +564,7 @@ def run_convergence(
                 message = str(error)
             else:
                 apply_result = run_command(
-                    ansible_command(config, check=False),
+                    ansible_command(config, check=False, scope=scope),
                     cwd=config.repo,
                     environment=environment,
                     deadline=deadline,
@@ -519,7 +578,7 @@ def run_convergence(
                         message = "maintenance window expired"
                 else:
                     verify_result = run_command(
-                        ansible_command(config, check=True),
+                        ansible_command(config, check=True, scope=scope),
                         cwd=config.repo,
                         environment=environment,
                         deadline=deadline,
@@ -548,16 +607,22 @@ def run_convergence(
                                 message = str(error)
                             else:
                                 success = True
-                                message = f"converged commit {commit[:12]}"
+                                target = f"scope {scope} at " if scope else ""
+                                message = f"converged {target}commit {commit[:12]}"
 
+    duration_seconds = time.monotonic() - started_at
     audit(
         config.log_dir,
         "converge-finish",
         commit=commit,
+        scope=scope or "full",
         success=success,
         message=message,
+        durationSeconds=round(duration_seconds, 3),
         log=str(log_path),
     )
+    if success:
+        message = f"{message} in {format_elapsed(duration_seconds)}"
     return success, message
 
 
@@ -571,7 +636,7 @@ def peer_is_authorized(uid: int, managed_uid: int) -> bool:
     return uid in {0, managed_uid}
 
 
-def receive_request(connection: socket.socket) -> str:
+def receive_request(connection: socket.socket) -> BrokerRequest:
     data = b""
     while b"\n" not in data and len(data) <= 4096:
         chunk = connection.recv(4096)
@@ -584,10 +649,17 @@ def receive_request(connection: socket.socket) -> str:
         payload = json.loads(data.split(b"\n", 1)[0])
     except (json.JSONDecodeError, UnicodeDecodeError) as error:
         raise WindowError("invalid request") from error
-    command = payload.get("command") if isinstance(payload, dict) else None
+    if not isinstance(payload, dict):
+        raise WindowError("invalid request")
+    command = payload.get("command")
     if command not in {"close", "converge", "status"}:
         raise WindowError("unsupported request")
-    return command
+    scope = payload.get("scope")
+    if scope is not None:
+        if command != "converge" or not isinstance(scope, str):
+            raise WindowError("scope is only supported for convergence")
+        convergence_tags(scope)
+    return BrokerRequest(command=command, scope=scope)
 
 
 def acquire_window_lock(path: Path) -> int:
@@ -666,11 +738,11 @@ def run_daemon(config: BrokerConfig) -> int:
                     send_message(connection, {"type": "result", "ok": False, "message": "unauthorized user"})
                     continue
                 try:
-                    command = receive_request(connection)
+                    request_message = receive_request(connection)
                 except WindowError as error:
                     send_message(connection, {"type": "result", "ok": False, "message": str(error)})
                     continue
-                if command == "status":
+                if request_message.command == "status":
                     remaining = max(0, int(deadline - time.monotonic()))
                     send_message(
                         connection,
@@ -684,12 +756,17 @@ def run_daemon(config: BrokerConfig) -> int:
                             "maxSeconds": MAX_SECONDS,
                         },
                     )
-                elif command == "close":
+                elif request_message.command == "close":
                     mark_window(config, "closing")
                     send_message(connection, {"type": "result", "ok": True, "message": "closing"})
                     stop_requested = True
                 else:
-                    success, message = run_convergence(config, deadline=deadline, connection=connection)
+                    success, message = run_convergence(
+                        config,
+                        deadline=deadline,
+                        connection=connection,
+                        scope=request_message.scope,
+                    )
                     send_message(connection, {"type": "result", "ok": success, "message": message})
     finally:
         if listener is not None:
@@ -748,14 +825,22 @@ def restore_services_after_stop(
     return 0
 
 
-def request(command: str, socket_path: Path = SOCKET_PATH) -> dict[str, object]:
+def request(
+    command: str,
+    socket_path: Path = SOCKET_PATH,
+    *,
+    scope: str | None = None,
+) -> dict[str, object]:
     connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     try:
         connection.connect(str(socket_path))
     except (FileNotFoundError, ConnectionRefusedError, PermissionError) as error:
         raise WindowError("no server-config maintenance window is open") from error
     with connection:
-        connection.sendall((json.dumps({"command": command}) + "\n").encode())
+        payload = {"command": command}
+        if scope is not None:
+            payload["scope"] = scope
+        connection.sendall((json.dumps(payload) + "\n").encode())
         buffer = b""
         result: dict[str, object] | None = None
         while True:
@@ -827,8 +912,8 @@ def print_status() -> int:
     return 0
 
 
-def client_command(command: str) -> int:
-    result = request(command)
+def client_command(command: str, *, scope: str | None = None) -> int:
+    result = request(command, scope=scope)
     print(str(result.get("message", "")))
     return 0 if result.get("ok") is True else 1
 
@@ -846,7 +931,12 @@ def parser() -> argparse.ArgumentParser:
     )
 
     subparsers.add_parser("status", help="show the active window")
-    subparsers.add_parser("converge", help="validate, check, apply, verify, and diagnose")
+    converge_parser = subparsers.add_parser("converge", help="validate, check, apply, verify, and diagnose")
+    converge_parser.add_argument(
+        "--scope",
+        choices=sorted(CONVERGENCE_SCOPES),
+        help="limit Ansible to an allowlisted non-sensitive scope",
+    )
     subparsers.add_parser("close", help="close the active window early")
 
     restore_parser = subparsers.add_parser("restore-services", help=argparse.SUPPRESS)
@@ -886,8 +976,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             return open_window(arguments.minutes, arguments.allow_sensitive)
         if arguments.command == "status":
             return print_status()
-        if arguments.command in {"close", "converge"}:
+        if arguments.command == "close":
             return client_command(arguments.command)
+        if arguments.command == "converge":
+            return client_command(arguments.command, scope=arguments.scope)
         if arguments.command == "restore-services":
             return restore_services_after_stop(
                 user=arguments.user,

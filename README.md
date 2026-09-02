@@ -70,6 +70,7 @@ No tracked configuration forces a dark or light palette. Herdr uses the terminal
 ./bin/apply                # Validate and apply once
 ./bin/doctor               # Read-only system report
 server-config-window status # Inspect an active maintenance window
+server-config-window converge --scope pi # Converge only the Pi tasks
 ```
 
 `converge` asks for sudo once, shows the dry-run diff, waits for explicit approval, applies twice, and fails unless the second application reports `changed=0 failed=0`. Its latest logs are stored with private permissions in `~/.local/state/server-config/logs`.
@@ -116,7 +117,15 @@ server-config-window converge
 server-config-window close
 ```
 
-`converge` accepts no Ansible arguments. It requires a clean committed `main` that is not behind `origin/main`, then runs validation, an Ansible dry run, the apply, a second dry run that must report `changed=0`, and doctor. It writes private audit and command logs under `/var/log/server-config`. A failed convergence returns an error but leaves the window open until its original deadline or an explicit close. It never commits or pushes source changes.
+`converge` requires a clean committed `main` that is not behind `origin/main`, then runs validation, an Ansible dry run, the apply, a second dry run that must report `changed=0`, and doctor. Each command reports its elapsed time. It writes private audit and command logs under `/var/log/server-config`. A failed convergence returns an error but leaves the window open until its original deadline or an explicit close. It never commits or pushes source changes.
+
+For a small change confined to one area, use an allowlisted scope:
+
+```bash
+server-config-window converge --scope pi
+```
+
+Available scopes are `android`, `docker`, `herdr`, `mise`, `neovim`, `onboarding`, `pi`, `shell`, `transmission`, and `user-config`. The broker applies the selected Ansible tag during the dry run, apply, and final check. Validation and doctor remain complete. Scoped convergence always skips access, firewall, SSH, sudo, Tailscale, and user-account tasks, even during a sensitive window. Use full `converge` for cross-cutting or host-access changes.
 
 Citadel displays the remaining time and exposes a fixed close action. Service controls and maintenance actions stay locked while the window is active. Citadel cannot request convergence through its API.
 
