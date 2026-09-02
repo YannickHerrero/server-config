@@ -14,7 +14,7 @@ server_config_mise_sha256: a86aa65c8ca48a548c3f9904853489383bb8cdebfd8f2cf8ddd18
 
 server_config_node_version: "24.16.0"
 server_config_tree_sitter_version: "0.26.9"
-server_config_pi_version: "0.84.3"
+server_config_pi_version: "0.84.4"
 server_config_legacy_node_install_dir: /opt/node-v24.16.0-linux-x64
 server_config_legacy_node_archive_path: /var/cache/server-config/node-v24.16.0-linux-x64.tar.xz
 
