@@ -28,16 +28,18 @@ enum StepKind {
     GitHub,
     Vercel,
     Pi,
+    Codex,
     GitIdentity,
     Convergence,
 }
 
 impl StepKind {
-    const ALL: [Self; 6] = [
+    const ALL: [Self; 7] = [
         Self::Tailscale,
         Self::GitHub,
         Self::Vercel,
         Self::Pi,
+        Self::Codex,
         Self::GitIdentity,
         Self::Convergence,
     ];
@@ -48,6 +50,7 @@ impl StepKind {
             Self::GitHub => "GitHub CLI",
             Self::Vercel => "Vercel CLI",
             Self::Pi => "Pi provider",
+            Self::Codex => "Codex CLI",
             Self::GitIdentity => "Git identity",
             Self::Convergence => "Server convergence",
         }
@@ -63,6 +66,9 @@ impl StepKind {
             }
             Self::Vercel => "Authenticate the Vercel CLI before deploying projects from this host.",
             Self::Pi => "Start Pi, run /login, select a provider, then exit Pi to return here.",
+            Self::Codex => {
+                "Authenticate Codex with ChatGPT before pairing experimental Remote Control."
+            }
             Self::GitIdentity => {
                 "Store name and email in an ignored local file. Ansible applies them without changing gh credentials."
             }
@@ -80,6 +86,7 @@ impl StepKind {
             Self::GitHub => Some("gh auth login --hostname github.com --git-protocol https --web"),
             Self::Vercel => Some("vercel login"),
             Self::Pi => Some("pi"),
+            Self::Codex => Some("codex login --device-auth"),
             Self::GitIdentity => None,
             Self::Convergence => Some("./bin/converge"),
         }
@@ -92,6 +99,7 @@ struct StatusSnapshot {
     github: bool,
     vercel: bool,
     pi: bool,
+    codex: bool,
     git_identity: bool,
     git_identity_saved: bool,
     convergence: bool,
@@ -113,6 +121,7 @@ impl StatusSnapshot {
             github: command_succeeds("gh", &["auth", "status"]),
             vercel: command_succeeds("timeout", &["10", "vercel", "whoami"]),
             pi: pi_auth_is_present(),
+            codex: command_succeeds("codex", &["login", "status"]),
             git_identity,
             git_identity_saved,
             convergence: convergence_is_current(root, git_identity_saved),
@@ -125,6 +134,7 @@ impl StatusSnapshot {
             StepKind::GitHub => self.github,
             StepKind::Vercel => self.vercel,
             StepKind::Pi => self.pi,
+            StepKind::Codex => self.codex,
             StepKind::GitIdentity => self.git_identity,
             StepKind::Convergence => self.convergence,
         }
@@ -636,6 +646,10 @@ fn run_step(root: &Path, step: StepKind) -> io::Result<bool> {
     println!("\n{}\n", step.description());
     if step == StepKind::Pi {
         println!("Inside Pi, run /login. Exit Pi when authentication is complete.\n");
+    } else if step == StepKind::Codex {
+        println!(
+            "Complete device sign-in in a browser. Pair Remote Control after login with `codex remote-control start` and `codex remote-control pair`.\n"
+        );
     }
     println!("Running: {command}\n");
 
@@ -755,7 +769,8 @@ mod tests {
             .collect::<String>();
         assert!(screen.contains("Server onboarding"));
         assert!(screen.contains("GitHub CLI"));
-        assert!(screen.contains("2/6 complete"));
+        assert!(screen.contains("Codex CLI"));
+        assert!(screen.contains("2/7 complete"));
     }
 
     #[test]

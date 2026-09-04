@@ -45,7 +45,7 @@ Run the interactive onboarding for the remaining human steps:
 ./bin/onboard
 ```
 
-The TUI checks Tailscale, GitHub, Vercel, Pi, Git identity, and Ansible convergence. Select a step and press Enter. It temporarily restores the terminal before launching each official CLI, so device codes, browser URLs, sudo, and Pi `/login` work normally. The TUI never reads or stores authentication tokens.
+The TUI checks Tailscale, GitHub, Vercel, Pi, Codex, Git identity, and Ansible convergence. Select a step and press Enter. It temporarily restores the terminal before launching each official CLI, so device codes, browser URLs, sudo, and Pi `/login` work normally. The TUI never reads or stores authentication tokens.
 
 The equivalent manual commands remain available if the TUI cannot start:
 
@@ -53,10 +53,11 @@ The equivalent manual commands remain available if the TUI cannot start:
 gh auth login --git-protocol https
 vercel login
 pi                         # then run /login
+codex login --device-auth
 ./bin/converge
 ```
 
-Pi stores credentials in `~/.pi/agent/auth.json`; that file must never enter this repository.
+Pi stores credentials in `~/.pi/agent/auth.json`, and Codex normally stores them in `~/.codex/auth.json` on this headless host. These files must never enter the repository.
 
 No tracked configuration forces a dark or light palette. Herdr uses the terminal palette, Neovim keeps its default terminal-aware colors, Pi detects the terminal background, and the prompt uses transparent backgrounds.
 
@@ -98,6 +99,31 @@ mosh yannick@100.x.y.z
 ```
 
 Mosh authenticates through the existing private SSH service, then uses UDP ports `60000:61000` on `tailscale0`. UFW does not expose those ports on the server's public network interface.
+
+## ChatGPT Remote from headless Linux
+
+Codex CLI includes experimental Remote Control support for a headless Linux host. It connects outward to OpenAI's relay, so it requires no inbound firewall rule and the Codex app server must not be exposed directly.
+
+Authenticate Codex with the same ChatGPT account and workspace used by the mobile app. Device-code login may first need to be enabled in the ChatGPT account or workspace security settings:
+
+```bash
+codex login --device-auth
+```
+
+Start the background app-server daemon, then create a short-lived manual pairing code:
+
+```bash
+codex remote-control start
+codex remote-control pair
+```
+
+In the ChatGPT mobile app, open Remote and enter the manual pairing code. Treat the code as temporary authentication data and do not paste it into logs or Git. Stop the daemon when remote access is no longer wanted:
+
+```bash
+codex remote-control stop
+```
+
+The daemon is not managed as a boot service. Run `codex remote-control start` again after a host reboot. The feature is experimental and current mobile releases may have pairing or device-discovery bugs. Check the [OpenAI developer command reference](https://learn.chatgpt.com/docs/developer-commands#codex-remote-control) when troubleshooting behavior that changed after an update.
 
 ## Maintenance windows
 
@@ -159,7 +185,7 @@ To inspect a remote host from a trusted control machine, create the ignored file
 - an 8 GiB swap file
 - weekly SSD TRIM
 - UTC system time
-- pinned mise, Node.js, Bun, pnpm, Rust, Pi, Herdr, gh, EAS, Vercel, Neovim, LSP, formatter, and terminal CLI versions
+- pinned mise, Node.js, Bun, pnpm, Rust, Pi, Codex, Herdr, gh, EAS, Vercel, Neovim, LSP, formatter, and terminal CLI versions
 - Tailscale installation with interactive authentication
 - UFW with public traffic denied except for Transmission peer traffic, with SSH allowed only through Tailscale
 - Mosh sessions through Tailscale only
@@ -190,7 +216,7 @@ Application repositories and runtime configuration live outside `server-config`.
 - tailnet policy, Tailscale authentication, key expiry, or passwordless sudo policy
 - Maestro or a system browser
 - application repositories, downloaded torrent payloads, user data, or off-host backups
-- Multica, Pi, GitHub, Tailscale, or Android emulator sessions and credentials
+- Multica, Pi, Codex, GitHub, Tailscale, or Android emulator sessions and credentials
 - application Compose files, agent definitions, schedulers, or service data
 - tailnet policy and Citadel route activation
 - Vercel authentication
@@ -199,7 +225,7 @@ Add these only after the server needs them.
 
 ## Version updates
 
-Downloaded host tools use versions and checksums declared in `group_vars/all.yml`. User runtimes and CLIs use exact versions in `config/mise/config.toml`. Update these files through a reviewed commit, then run `./bin/check` and `./bin/apply`. Application versions belong in their project repositories. Do not run `mise use -g`, `pi update`, or global npm installs directly on the host.
+Downloaded host tools use versions and checksums declared in `group_vars/all.yml`. User runtimes and CLIs use exact versions in `config/mise/config.toml`. Update these files through a reviewed commit, then run `./bin/check` and `./bin/apply`. Application versions belong in their project repositories. Do not run `mise use -g`, `pi update`, `codex update`, or global npm installs directly on the host.
 
 ## Secrets
 
