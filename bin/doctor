@@ -5,6 +5,7 @@ ROOT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 export PATH="$HOME/.local/share/mise/shims:$HOME/.local/bin:$PATH"
 EXPECTED_NODE_VERSION=$(awk -F'"' '/^server_config_node_version:/ {print $2}' "$ROOT_DIR/group_vars/all.yml")
 EXPECTED_PI_VERSION=$(awk -F'"' '/^server_config_pi_version:/ {print $2}' "$ROOT_DIR/group_vars/all.yml")
+EXPECTED_CODEX_VERSION=$(awk -F'"' '/^server_config_codex_version:/ {print $2}' "$ROOT_DIR/group_vars/all.yml")
 EXPECTED_HERDR_VERSION=$(awk -F'"' '/^server_config_herdr_version:/ {print $2}' "$ROOT_DIR/group_vars/all.yml")
 EXPECTED_ONBOARDING_VERSION=$(awk -F'"' '/^server_config_onboarding_version:/ {print $2}' "$ROOT_DIR/group_vars/all.yml")
 EXPECTED_SWAP_PATH=$(awk '/^server_config_swap_path:/ {print $2}' "$ROOT_DIR/group_vars/all.yml")
@@ -311,6 +312,56 @@ if [[ -x $onboarding_binary ]]; then
     fi
 else
     fail "onboarding TUI is not installed at $onboarding_binary"
+fi
+
+section "Codex runtime"
+codex_binary="$HOME/.local/bin/codex"
+if [[ -x $codex_binary ]]; then
+    installed_codex_version=$($codex_binary --version)
+    printf 'Codex: %s\n' "$installed_codex_version"
+    if [[ $installed_codex_version == "codex-cli $EXPECTED_CODEX_VERSION" ]]; then
+        pass "Codex matches the pinned version"
+    else
+        fail "Codex does not match the pinned version $EXPECTED_CODEX_VERSION"
+    fi
+    if remote_control_help=$($codex_binary remote-control --help 2>&1) \
+        && grep -Eq '^[[:space:]]+pair[[:space:]]' <<<"$remote_control_help"; then
+        pass "Codex experimental remote-control pairing is available"
+    else
+        fail "Codex experimental remote-control pairing is unavailable"
+    fi
+else
+    fail "Codex is not installed at $codex_binary"
+fi
+if command -v bwrap >/dev/null 2>&1; then
+    printf 'Bubblewrap: %s\n' "$(bwrap --version)"
+    pass "bubblewrap is installed"
+else
+    fail "bubblewrap is not installed"
+fi
+if [[ -f /etc/apparmor.d/bwrap-userns-restrict ]]; then
+    pass "the bubblewrap AppArmor profile is installed"
+else
+    fail "the bubblewrap AppArmor profile is missing"
+fi
+if [[ -x $codex_binary ]] && $codex_binary sandbox linux /usr/bin/true >/dev/null 2>&1; then
+    pass "the Codex Linux sandbox can run a command"
+else
+    fail "the Codex Linux sandbox cannot run a command"
+fi
+
+codex_auth_file="$HOME/.codex/auth.json"
+if [[ -e $codex_auth_file ]]; then
+    codex_auth_mode=$(stat -c '%a' "$codex_auth_file")
+    if [[ $codex_auth_mode == 600 ]]; then
+        pass "Codex authentication file permissions are 0600"
+    else
+        fail "Codex authentication file permissions are $codex_auth_mode instead of 600"
+    fi
+elif [[ -x $codex_binary ]] && $codex_binary login status >/dev/null 2>&1; then
+    pass "Codex authentication is available from the credential store"
+else
+    warn "Codex is not authenticated yet; run codex login --device-auth"
 fi
 
 section "Pi skills"

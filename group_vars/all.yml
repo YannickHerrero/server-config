@@ -15,6 +15,16 @@ server_config_mise_sha256: a86aa65c8ca48a548c3f9904853489383bb8cdebfd8f2cf8ddd18
 server_config_node_version: "24.16.0"
 server_config_tree_sitter_version: "0.26.9"
 server_config_pi_version: "0.84.4"
+server_config_codex_version: "0.153.2"
+server_config_codex_url: >-
+  https://releases.openai.com/codex/releases/0.153.2/codex-package-x86_64-unknown-linux-musl.tar.gz
+server_config_codex_sha256: e10fa0cee78e9f0bd395880f03fd4fd227d903ca7af649bbc08d1649101e9225
+server_config_codex_install_dir: >-
+  {{ ansible_user_dir }}/.local/share/server-config/codex/{{ server_config_codex_version }}
+server_config_codex_packages:
+  - apparmor-profiles
+  - apparmor-utils
+  - bubblewrap
 server_config_legacy_node_install_dir: /opt/node-v24.16.0-linux-x64
 server_config_legacy_node_archive_path: /var/cache/server-config/node-v24.16.0-linux-x64.tar.xz
 

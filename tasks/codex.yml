@@ -1,0 +1,135 @@
+---
+- name: Install Codex Linux sandbox packages
+  become: true
+  become_user: root
+  ansible.builtin.apt:
+    name: "{{ server_config_codex_packages }}"
+    state: present
+  tags:
+    - codex
+    - packages
+
+- name: Inspect the packaged bubblewrap AppArmor profile
+  become: true
+  become_user: root
+  ansible.builtin.stat:
+    path: /usr/share/apparmor/extra-profiles/bwrap-userns-restrict
+  register: server_config_codex_bwrap_profile_source
+  tags:
+    - codex
+
+- name: Require the packaged bubblewrap AppArmor profile
+  when: not ansible_check_mode
+  ansible.builtin.assert:
+    that:
+      - server_config_codex_bwrap_profile_source.stat.isreg | default(false)
+    fail_msg: The installed apparmor-profiles package has no bwrap-userns-restrict profile.
+  tags:
+    - codex
+
+- name: Install the bubblewrap AppArmor profile
+  become: true
+  become_user: root
+  when: server_config_codex_bwrap_profile_source.stat.isreg | default(false)
+  ansible.builtin.copy:
+    src: /usr/share/apparmor/extra-profiles/bwrap-userns-restrict
+    dest: /etc/apparmor.d/bwrap-userns-restrict
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0644"
+  tags:
+    - codex
+
+- name: Load the bubblewrap AppArmor profile
+  become: true
+  become_user: root
+  when: not ansible_check_mode
+  ansible.builtin.command:
+    argv:
+      - /usr/sbin/apparmor_parser
+      - -r
+      - /etc/apparmor.d/bwrap-userns-restrict
+  changed_when: false
+  tags:
+    - codex
+
+- name: Inspect the pinned Codex installation
+  ansible.builtin.stat:
+    path: "{{ server_config_codex_install_dir }}/bin/codex"
+  register: server_config_codex_installed
+  tags:
+    - codex
+
+- name: Create the Codex installation directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    owner: "{{ ansible_user_id }}"
+    group: "{{ ansible_user_gid }}"
+    mode: "0755"
+    state: directory
+  loop:
+    - "{{ ansible_user_dir }}/.cache/server-config"
+    - "{{ ansible_user_dir }}/.local/bin"
+    - "{{ ansible_user_dir }}/.local/share/server-config/codex"
+    - "{{ server_config_codex_install_dir }}"
+  tags:
+    - codex
+
+- name: Download the pinned Codex archive
+  when: not ansible_check_mode or server_config_codex_installed.stat.exists
+  ansible.builtin.get_url:
+    url: "{{ server_config_codex_url }}"
+    dest: "{{ ansible_user_dir }}/.cache/server-config/codex-{{ server_config_codex_version }}.tar.gz"
+    checksum: "sha256:{{ server_config_codex_sha256 }}"
+    owner: "{{ ansible_user_id }}"
+    group: "{{ ansible_user_gid }}"
+    mode: "0644"
+  tags:
+    - codex
+
+- name: Extract the pinned Codex archive
+  when: not ansible_check_mode or server_config_codex_installed.stat.exists
+  ansible.builtin.unarchive:
+    src: "{{ ansible_user_dir }}/.cache/server-config/codex-{{ server_config_codex_version }}.tar.gz"
+    dest: "{{ server_config_codex_install_dir }}"
+    remote_src: true
+    creates: "{{ server_config_codex_install_dir }}/bin/codex"
+    owner: "{{ ansible_user_id }}"
+    group: "{{ ansible_user_gid }}"
+  tags:
+    - codex
+
+- name: Select the pinned Codex release
+  when: not ansible_check_mode or server_config_codex_installed.stat.exists
+  ansible.builtin.file:
+    src: "{{ server_config_codex_install_dir }}"
+    dest: "{{ ansible_user_dir }}/.local/share/server-config/codex/current"
+    owner: "{{ ansible_user_id }}"
+    group: "{{ ansible_user_gid }}"
+    state: link
+    force: true
+  tags:
+    - codex
+
+- name: Link the Codex CLI
+  when: not ansible_check_mode or server_config_codex_installed.stat.exists
+  ansible.builtin.file:
+    src: "{{ ansible_user_dir }}/.local/share/server-config/codex/current/bin/codex"
+    dest: "{{ ansible_user_dir }}/.local/bin/codex"
+    owner: "{{ ansible_user_id }}"
+    group: "{{ ansible_user_gid }}"
+    state: link
+    force: true
+  tags:
+    - codex
+
+- name: Report the planned pinned Codex installation
+  when:
+    - ansible_check_mode
+    - not server_config_codex_installed.stat.exists
+  ansible.builtin.debug:
+    msg: "Install Codex CLI {{ server_config_codex_version }} with the Linux sandbox"
+  changed_when: true
+  tags:
+    - codex
