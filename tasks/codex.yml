@@ -63,16 +63,26 @@
 
 - name: Create the Codex installation directories
   ansible.builtin.file:
-    path: "{{ item }}"
+    path: "{{ item.path }}"
     owner: "{{ ansible_user_id }}"
     group: "{{ ansible_user_gid }}"
-    mode: "0755"
+    mode: "{{ item.mode }}"
     state: directory
   loop:
-    - "{{ ansible_user_dir }}/.cache/server-config"
-    - "{{ ansible_user_dir }}/.local/bin"
-    - "{{ ansible_user_dir }}/.local/share/server-config/codex"
-    - "{{ server_config_codex_install_dir }}"
+    - path: "{{ ansible_user_dir }}/.cache/server-config"
+      mode: "0755"
+    - path: "{{ ansible_user_dir }}/.local/bin"
+      mode: "0755"
+    - path: "{{ ansible_user_dir }}/.codex"
+      mode: "0700"
+    - path: "{{ ansible_user_dir }}/.codex/packages"
+      mode: "0755"
+    - path: "{{ ansible_user_dir }}/.codex/packages/standalone"
+      mode: "0755"
+    - path: "{{ ansible_user_dir }}/.codex/packages/standalone/releases"
+      mode: "0755"
+    - path: "{{ server_config_codex_install_dir }}"
+      mode: "0755"
   tags:
     - codex
 
@@ -100,11 +110,23 @@
   tags:
     - codex
 
+- name: Link the managed Codex daemon entrypoint
+  when: not ansible_check_mode or server_config_codex_installed.stat.exists
+  ansible.builtin.file:
+    src: bin/codex
+    dest: "{{ server_config_codex_install_dir }}/codex"
+    owner: "{{ ansible_user_id }}"
+    group: "{{ ansible_user_gid }}"
+    state: link
+    force: true
+  tags:
+    - codex
+
 - name: Select the pinned Codex release
   when: not ansible_check_mode or server_config_codex_installed.stat.exists
   ansible.builtin.file:
     src: "{{ server_config_codex_install_dir }}"
-    dest: "{{ ansible_user_dir }}/.local/share/server-config/codex/current"
+    dest: "{{ ansible_user_dir }}/.codex/packages/standalone/current"
     owner: "{{ ansible_user_id }}"
     group: "{{ ansible_user_gid }}"
     state: link
@@ -115,12 +137,19 @@
 - name: Link the Codex CLI
   when: not ansible_check_mode or server_config_codex_installed.stat.exists
   ansible.builtin.file:
-    src: "{{ ansible_user_dir }}/.local/share/server-config/codex/current/bin/codex"
+    src: "{{ ansible_user_dir }}/.codex/packages/standalone/current/bin/codex"
     dest: "{{ ansible_user_dir }}/.local/bin/codex"
     owner: "{{ ansible_user_id }}"
     group: "{{ ansible_user_gid }}"
     state: link
     force: true
+  tags:
+    - codex
+
+- name: Remove the obsolete custom Codex installation
+  ansible.builtin.file:
+    path: "{{ ansible_user_dir }}/.local/share/server-config/codex"
+    state: absent
   tags:
     - codex
 

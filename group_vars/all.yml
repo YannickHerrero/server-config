@@ -19,8 +19,12 @@ server_config_codex_version: "0.153.2"
 server_config_codex_url: >-
   https://releases.openai.com/codex/releases/0.153.2/codex-package-x86_64-unknown-linux-musl.tar.gz
 server_config_codex_sha256: e10fa0cee78e9f0bd395880f03fd4fd227d903ca7af649bbc08d1649101e9225
+server_config_codex_target: x86_64-unknown-linux-musl
+server_config_codex_release_name: >-
+  {{ server_config_codex_version }}-{{ server_config_codex_target }}
 server_config_codex_install_dir: >-
-  {{ ansible_user_dir }}/.local/share/server-config/codex/{{ server_config_codex_version }}
+  {{ ansible_user_dir }}/.codex/packages/standalone/releases/
+  {{- server_config_codex_release_name }}
 server_config_codex_packages:
   - apparmor-profiles
   - apparmor-utils

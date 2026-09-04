@@ -333,6 +333,13 @@ if [[ -x $codex_binary ]]; then
 else
     fail "Codex is not installed at $codex_binary"
 fi
+managed_codex_binary="$HOME/.codex/packages/standalone/current/codex"
+if [[ -x $managed_codex_binary ]] \
+    && [[ $($managed_codex_binary --version) == "codex-cli $EXPECTED_CODEX_VERSION" ]]; then
+    pass "the managed Codex daemon entrypoint matches the pinned version"
+else
+    fail "the managed Codex daemon entrypoint is missing or has the wrong version"
+fi
 if command -v bwrap >/dev/null 2>&1; then
     printf 'Bubblewrap: %s\n' "$(bwrap --version)"
     pass "bubblewrap is installed"
