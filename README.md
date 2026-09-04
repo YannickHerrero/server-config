@@ -110,20 +110,23 @@ Authenticate Codex with the same ChatGPT account and workspace used by the mobil
 codex login --device-auth
 ```
 
-Start the background app-server daemon, then create a short-lived manual pairing code:
+Enable Remote Control in the daemon settings, start the daemon, then create a short-lived manual pairing code:
 
 ```bash
-codex remote-control start
+codex app-server daemon enable-remote-control
+codex app-server daemon start
 codex remote-control pair
 ```
+
+Use these daemon commands instead of `codex remote-control start` or `codex app-server daemon bootstrap`. Those bootstrap commands launch an hourly updater, which would bypass the version and checksum pinned by this repository.
 
 In the ChatGPT mobile app, open Remote and enter the manual pairing code. Treat the code as temporary authentication data and do not paste it into logs or Git. Stop the daemon when remote access is no longer wanted:
 
 ```bash
-codex remote-control stop
+codex app-server daemon stop
 ```
 
-The daemon is not managed as a boot service. Run `codex remote-control start` again after a host reboot. The feature is experimental and current mobile releases may have pairing or device-discovery bugs. Check the [OpenAI developer command reference](https://learn.chatgpt.com/docs/developer-commands#codex-remote-control) when troubleshooting behavior that changed after an update.
+The daemon is not managed as a boot service. Run `codex app-server daemon start` again after a host reboot. The feature is experimental and current mobile releases may have pairing or device-discovery bugs. Check the [OpenAI developer command reference](https://learn.chatgpt.com/docs/developer-commands#codex-remote-control) when troubleshooting behavior that changed after an update.
 
 ## Maintenance windows
 

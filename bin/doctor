@@ -340,6 +340,26 @@ if [[ -x $managed_codex_binary ]] \
 else
     fail "the managed Codex daemon entrypoint is missing or has the wrong version"
 fi
+codex_daemon_settings="$HOME/.codex/app-server-daemon/settings.json"
+if jq -e '.remoteControlEnabled == true' "$codex_daemon_settings" >/dev/null 2>&1; then
+    pass "Codex Remote Control is enabled in the daemon settings"
+else
+    warn "Codex Remote Control is not enabled; run codex app-server daemon enable-remote-control"
+fi
+if codex_daemon_status=$($managed_codex_binary app-server daemon version 2>/dev/null) \
+    && jq -e --arg version "$EXPECTED_CODEX_VERSION" \
+        '.status == "running" and .cliVersion == $version and .appServerVersion == $version' \
+        <<<"$codex_daemon_status" >/dev/null; then
+    pass "the pinned Codex app-server daemon is running"
+else
+    warn "the Codex app-server daemon is not running"
+fi
+codex_updater_command="$managed_codex_binary app-server daemon pid-update-loop"
+if pgrep -f -x "$codex_updater_command" >/dev/null; then
+    fail "the Codex automatic updater is running and can bypass the pinned version"
+else
+    pass "the Codex automatic updater is not running"
+fi
 if command -v bwrap >/dev/null 2>&1; then
     printf 'Bubblewrap: %s\n' "$(bwrap --version)"
     pass "bubblewrap is installed"

@@ -648,7 +648,7 @@ fn run_step(root: &Path, step: StepKind) -> io::Result<bool> {
         println!("Inside Pi, run /login. Exit Pi when authentication is complete.\n");
     } else if step == StepKind::Codex {
         println!(
-            "Complete device sign-in in a browser. Pair Remote Control after login with `codex remote-control start` and `codex remote-control pair`.\n"
+            "Complete device sign-in in a browser. Then enable and start Remote Control with `codex app-server daemon enable-remote-control` and `codex app-server daemon start` before pairing.\n"
         );
     }
     println!("Running: {command}\n");
